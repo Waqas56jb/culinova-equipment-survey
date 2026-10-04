@@ -78,8 +78,8 @@ dialog img{width:100%;height:auto;display:block;max-height:70vh;object-fit:conta
 .shell{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:0;flex:1;overflow:hidden}
 .survey-shell{height:100%;min-height:0}
 .side{background:#fff;border-right:1px solid var(--line);padding:12px;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
-.side-search{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:12px;padding:0 10px;background:var(--panel);margin-bottom:10px;flex:none}
-.side-search input{width:100%;min-height:42px;border:0;outline:none;background:transparent;padding:0}
+.side-search{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:12px;padding:0 12px;background:var(--panel);margin-bottom:10px;flex:none;min-height:44px}
+.side-search svg{flex:none;color:var(--mute);display:block}
 .navlist{overflow:auto;flex:1;min-height:0;padding-right:4px}
 .nav-client{margin-bottom:6px}
 .nav-client-btn{width:100%;text-align:left;border:1px solid var(--line);background:#FFFDF8;border-radius:12px;padding:10px 12px}
@@ -92,6 +92,7 @@ dialog img{width:100%;height:auto;display:block;max-height:70vh;object-fit:conta
 .nav-sites i{font-style:normal;font-size:12px;min-width:22px;height:22px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.08)}
 .nav-sites button.on i{background:rgba(255,255,255,.18)}
 .side input{width:100%;min-height:42px;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;margin-bottom:12px;background:var(--panel)}
+.side .side-search input{width:100%;min-height:42px;height:42px;border:0;outline:none;background:transparent;padding:0;margin:0;border-radius:0;box-shadow:none;-webkit-appearance:none;appearance:none}
 details{margin-bottom:2px}
 summary{list-style:none;cursor:pointer;padding:9px 10px;border-radius:8px;font-weight:700;display:flex;gap:8px;align-items:center}
 summary::-webkit-details-marker{display:none}
