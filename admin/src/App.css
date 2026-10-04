@@ -38,10 +38,12 @@ dialog img{width:100%;height:auto;display:block;max-height:70vh;object-fit:conta
 .f{display:block;font-size:13.5px;font-weight:600;color:var(--mute);margin-bottom:6px}
 .in{width:100%;min-height:46px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel)}
 .in:focus{border-color:var(--action);outline:none;box-shadow:0 0 0 3px rgba(11,79,108,.18)}
-.signin{min-height:48px;width:100%;margin-top:8px;border:0;border-radius:10px;background:var(--action);color:#fff;font-weight:700}
-.signin:active{background:var(--action-press)}
+.signin{min-height:48px;width:100%;margin-top:8px;border:0;border-radius:10px;background:var(--action);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;touch-action:manipulation}
+.signin:active:not(:disabled){background:var(--action-press);transform:scale(.98)}
+.signin:disabled{opacity:.75;cursor:wait}
 .signin.ghost{background:var(--panel);color:var(--ink);border:1.5px solid var(--line)}
-.signin:disabled{opacity:.65}
+.spin{width:18px;height:18px;border:3px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 .shell{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:calc(100% - 54px);min-height:calc(100dvh - 54px)}
 

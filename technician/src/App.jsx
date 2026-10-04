@@ -14,6 +14,26 @@ const CONDITIONS = [
   ["mixed", "Mixed", "c-mixed"],
 ];
 
+function Spinner({ ghost }) {
+  return <span className={`spin${ghost ? " ghost" : ""}`} aria-hidden="true" />;
+}
+
+function ActionBtn({ busy, idle, busyLabel, className = "btn big", ...rest }) {
+  const on = !!busy;
+  return (
+    <button
+      className={className}
+      type={rest.type || "button"}
+      disabled={on || rest.disabled}
+      aria-busy={on || undefined}
+      {...rest}
+    >
+      {on ? <Spinner ghost={/\bghost\b/.test(className)} /> : null}
+      {on ? (busyLabel || idle) : idle}
+    </button>
+  );
+}
+
 function needsProblem(d) {
   return d.cond === "ns" || d.cond === "oos" || (d.cond === "mixed" && d.ns + d.oos > 0);
 }
@@ -22,6 +42,23 @@ function nowLocal() {
   const d = new Date();
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 16);
+}
+
+function clientLabel(c) {
+  return String(c?.label || c?.name || c?.code || "Client").trim();
+}
+
+function isVerifySeedClient(c) {
+  return /^S3B1\s+Customer/i.test(clientLabel(c));
+}
+
+function sortClients(list) {
+  return (list || []).slice().sort((a, b) => {
+    const seedA = isVerifySeedClient(a) ? 1 : 0;
+    const seedB = isVerifySeedClient(b) ? 1 : 0;
+    if (seedA !== seedB) return seedA - seedB;
+    return clientLabel(a).localeCompare(clientLabel(b), "en");
+  });
 }
 
 function toLocalInput(iso) {
@@ -197,6 +234,7 @@ function EquipmentFormBody({
   delArmed,
   defs,
   readonly,
+  photoBusy,
   onUpdate,
   onSpec,
   onDeletePhoto,
@@ -343,10 +381,12 @@ function EquipmentFormBody({
         </h2>
         {!readonly ? (
           <div className="photo-actions">
-            <label className="btn ghost" htmlFor="cam">
+            <label className={`btn ghost${photoBusy ? " is-busy" : ""}`} htmlFor="cam">
+              {photoBusy ? <Spinner ghost /> : null}
               Take photo
             </label>
-            <label className="btn ghost" htmlFor="gal">
+            <label className={`btn ghost${photoBusy ? " is-busy" : ""}`} htmlFor="gal">
+              {photoBusy ? <Spinner ghost /> : null}
               From gallery
             </label>
           </div>
@@ -378,7 +418,9 @@ function EquipmentFormBody({
                     <option key={pt}>{pt}</option>
                   ))}
                 </select>
-                {p.status === "uploading" ? <p className="hint">Uploading…</p> : null}
+                {p.status === "uploading" ? (
+                  <div className="thumb-busy"><Spinner /> Uploading…</div>
+                ) : null}
                 {p.status === "saved" ? <p className="hint">Saved</p> : null}
                 {p.status === "failed" ? (
                   <p className="hint">
@@ -608,10 +650,10 @@ export default function App() {
         }
       }
       try {
-        const list = await api("GET", "/lookups/customers");
+        const list = sortClients(await api("GET", "/lookups/customers"));
         if (!cancelled) {
-          setClients(list || []);
-          setClient((prev) => prev || list?.[0]?.id || "");
+          setClients(list);
+          setClient((prev) => (list.some((c) => c.id === prev) ? prev : (list[0]?.id || "")));
         }
       } catch (e) {
         if (!cancelled && !(e instanceof ApiError && e.status === 401)) {
@@ -643,10 +685,12 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await api("GET", `/lookups/sites?customer_id=${encodeURIComponent(client)}`);
+        const raw = await api("GET", `/lookups/sites?customer_id=${encodeURIComponent(client)}`);
         if (cancelled) return;
-        setSites(list || []);
-        setSite((prev) => (list || []).some((s) => s.id === prev) ? prev : (list?.[0]?.id || ""));
+        const list = Array.isArray(raw) ? raw : [];
+        setSites(list);
+        setSite((prev) => (list.some((s) => s.id === prev) ? prev : (list[0]?.id || "")));
+        if (!list.length) setAddingSite(true);
       } catch (e) {
         if (!cancelled) setStartErr(e.message || "Could not load sites");
       }
@@ -1190,7 +1234,8 @@ export default function App() {
               />
             </div>
             {authErr ? <div className="err" role="alert">{authErr}</div> : null}
-            <button className="btn big" type="submit" disabled={busy}>
+            <button className="btn big" type="submit" disabled={busy} aria-busy={busy || undefined}>
+              {busy ? <Spinner /> : null}
               {busy ? "Signing in…" : "Sign in"}
             </button>
           </form>
@@ -1260,7 +1305,7 @@ export default function App() {
                 onChange={(e) => setClient(e.target.value)}
               >
                 {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label || c.name}</option>
+                  <option key={c.id} value={c.id}>{clientLabel(c)}</option>
                 ))}
               </select>
             </div>
@@ -1272,10 +1317,17 @@ export default function App() {
                 value={site}
                 onChange={(e) => setSite(e.target.value)}
               >
-                {(sites.length ? sites : []).map((s) => (
-                  <option key={s.id} value={s.id}>{s.label || s.name}</option>
-                ))}
+                {!sites.length ? (
+                  <option value="">No sites yet — add one below</option>
+                ) : (
+                  sites.map((s) => (
+                    <option key={s.id} value={s.id}>{s.label || s.name}</option>
+                  ))
+                )}
               </select>
+              {!sites.length ? (
+                <p className="hint">This client has no kitchen/building yet. Type a site name and save, then start the visit.</p>
+              ) : null}
               {addingSite ? (
                 <div style={{ marginTop: 10 }}>
                   <input
@@ -1284,9 +1336,7 @@ export default function App() {
                     value={newSiteName}
                     onChange={(e) => setNewSiteName(e.target.value)}
                   />
-                  <button className="btn" type="button" style={{ marginTop: 8 }} disabled={busy} onClick={addSite}>
-                    Save site
-                  </button>
+                  <ActionBtn className="btn" style={{ marginTop: 8 }} busy={busy} idle="Save site" busyLabel="Saving site…" onClick={addSite} />
                 </div>
               ) : (
                 <button className="btn ghost" type="button" style={{ marginTop: 8 }} onClick={() => setAddingSite(true)}>
@@ -1312,9 +1362,7 @@ export default function App() {
           {startErr ? <div className="err" role="alert">{startErr}</div> : null}
         </div>
         <div className="dock">
-          <button className="btn big" type="button" disabled={busy} onClick={startVisit}>
-            Start visit
-          </button>
+          <ActionBtn busy={busy} idle="Start visit" busyLabel="Starting visit…" onClick={startVisit} />
         </div>
       </section>
 
@@ -1432,6 +1480,7 @@ export default function App() {
               delArmed={delArmed}
               defs={DEFS}
               readonly={readonly}
+              photoBusy={!!draft?.photos?.some((p) => p.status === "uploading")}
               onUpdate={updateDraft}
               onSpec={setSpec}
               onDeletePhoto={deletePhoto}
@@ -1450,8 +1499,9 @@ export default function App() {
             ) : null}
           </div>
           {!readonly ? (
-            <button className="btn big" type="button" disabled={busy} onClick={saveEquipment}>
-              Save equipment
+            <button className="btn big" type="button" disabled={busy} onClick={saveEquipment} aria-busy={busy || undefined}>
+              {busy ? <Spinner /> : null}
+              {busy ? "Saving…" : "Save equipment"}
             </button>
           ) : null}
         </div>
@@ -1524,8 +1574,9 @@ export default function App() {
         </div>
         <div className="dock">
           {!readonly ? (
-            <button className="btn big" type="button" disabled={busy} onClick={finishSave}>
-              Save visit
+            <button className="btn big" type="button" disabled={busy} onClick={finishSave} aria-busy={busy || undefined}>
+              {busy ? <Spinner /> : null}
+              {busy ? "Saving visit…" : "Save visit"}
             </button>
           ) : null}
         </div>

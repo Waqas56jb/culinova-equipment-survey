@@ -39,17 +39,26 @@ button{cursor:pointer}
 label.f,.f-label{display:block;font-size:15px;font-weight:600;margin:0 0 6px}
 .field{margin-bottom:18px}
 .in{width:100%;min-height:52px;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel)}
+select.in{appearance:auto;cursor:pointer}
 textarea.in{min-height:92px;resize:vertical}
 .in:focus{border-color:var(--action);outline:none;box-shadow:0 0 0 3px rgba(11,79,108,.18)}
 .hint{font-size:14px;color:var(--mute);margin:6px 0 0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
 .card h2{font-size:17px;margin:0 0 14px;font-weight:700}
 
-.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:56px;border:0;border-radius:12px;font-weight:700;font-size:18px;background:var(--action);color:#fff;padding:12px 16px}
-.btn:active{background:var(--action-press)}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:56px;border:0;border-radius:12px;font-weight:700;font-size:18px;background:var(--action);color:#fff;padding:12px 16px;touch-action:manipulation;-webkit-tap-highlight-color:rgba(11,79,108,.22);user-select:none}
+.btn:active:not(:disabled){background:var(--action-press);transform:scale(.98)}
+.btn:disabled{opacity:.75;cursor:wait}
 .btn.big{min-height:66px;font-size:21px}
 .btn.ghost{background:var(--panel);color:var(--ink);border:1.5px solid var(--line)}
+.btn.ghost:active:not(:disabled){background:#E4EDF1;transform:scale(.98)}
 .btn.danger{background:var(--panel);color:var(--oos);border:1.5px solid #E5B5B1}
+.btn.is-busy,.btn[aria-busy=true]{pointer-events:none}
+.spin{width:20px;height:20px;border:3px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex:none}
+.spin.ghost{border-color:rgba(22,35,46,.18);border-top-color:var(--action)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.thumb-busy{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;font-weight:600;color:var(--action)}
+.thumb-busy .spin{width:14px;height:14px;border-width:2px}
 .dock{position:sticky;bottom:0;background:linear-gradient(to top,var(--steel) 78%,rgba(232,236,238,0));padding:18px 16px calc(14px + env(safe-area-inset-bottom,0px));display:grid;gap:10px;margin-top:auto}
 
 /* chips & condition */
@@ -114,7 +123,12 @@ textarea.in{min-height:92px;resize:vertical}
 .who{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;font-size:15px;font-weight:600}
 .who button{width:auto;min-height:40px;padding:8px 14px;font-size:15px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel);font-weight:700}
 .linkish{border:0;background:none;color:var(--action);font-weight:700;padding:0;min-height:0;width:auto;display:inline;font-size:inherit}
-@media (prefers-reduced-motion:no-preference){.chip,.cond button,.btn{transition:background-color .12s,border-color .12s}}
+.chip,.cond button,.cat,.item,.rows button,.back,.who button{
+  touch-action:manipulation;-webkit-tap-highlight-color:rgba(11,79,108,.18)
+}
+.chip:active,.cond button:active,.cat:active,.item:active,.rows button:active,.back:active{
+  transform:scale(.98)
+}
 
 html{overflow-x:hidden}
 .app-auth{max-width:none;min-height:100%;min-height:100dvh;background:

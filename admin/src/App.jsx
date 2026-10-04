@@ -741,7 +741,8 @@ export default function App() {
             />
           </div>
           {authErr ? <p className="err" role="alert">{authErr}</p> : null}
-          <button className="signin" type="submit" disabled={busy}>
+          <button className="signin" type="submit" disabled={busy} aria-busy={busy || undefined}>
+            {busy ? <span className="spin" aria-hidden="true" /> : null}
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
