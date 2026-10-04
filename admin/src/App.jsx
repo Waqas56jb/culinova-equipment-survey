@@ -1,7 +1,14 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, LogOut, Pencil, Search, Trash2 } from "lucide-react";
 import "./App.css";
 import { api, ApiError, clearSession, getToken, isNetworkError, setOnUnauthorized, setSession } from "./api";
-import { hasSurveyAccess } from "./constants";
+import { canDo, hasSurveyAccess, isOfficeAdmin } from "./constants";
+import { Logo } from "./Logo";
+import { Layout } from "./Layout";
+import { DashboardPage } from "./DashboardPage";
+import { UsersPage } from "./UsersPage";
+import { NotificationsPage } from "./NotificationsPage";
+import { InboxBell } from "./InboxBell";
 
 const fmt = (iso) => {
   const d = new Date(iso);
@@ -77,6 +84,14 @@ function specText(line, defMap) {
     .join(", ");
 }
 
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
 function sessionUser(raw) {
   if (!raw) return null;
   return {
@@ -89,8 +104,13 @@ function sessionUser(raw) {
   };
 }
 
-function NumCell({ n, cls }) {
-  return <td className={`n ${n ? cls : "zero"}`}>{n}</td>;
+function initials(name) {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return "AD";
+  return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
 }
 
 function Plate({ t }) {
@@ -149,12 +169,15 @@ export default function App() {
   const [view, setView] = useState("boot");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [page, setPage] = useState("dashboard");
+  const [navOpen, setNavOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const [editVisit, setEditVisit] = useState(null);
   const [authErr, setAuthErr] = useState("");
   const [busy, setBusy] = useState(false);
 
   const [sel, setSel] = useState({ customerId: null, siteId: null, visitId: null });
   const [filter, setFilter] = useState("all");
-  const [open, setOpen] = useState(() => new Set());
   const [find, setFind] = useState("");
   const [lightbox, setLightbox] = useState(null);
   const dialogRef = useRef(null);
@@ -179,6 +202,7 @@ export default function App() {
     setVisits([]);
     setVisitFull(null);
     visitCache.current.clear();
+    setPage("dashboard");
   }, []);
 
   useEffect(() => {
@@ -201,6 +225,7 @@ export default function App() {
       setSession(getToken() || token, fromApi);
       setUser(fromApi);
       setView(hasSurveyAccess(fromApi.role) ? "app" : "denied");
+      setPage("dashboard");
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         setUser(null);
@@ -242,6 +267,19 @@ export default function App() {
   useEffect(() => {
     if (view === "app" && user) loadTree();
   }, [view, user, loadTree]);
+
+  useEffect(() => {
+    if (view !== "app" || !user) return;
+    let cancelled = false;
+    api("GET", "/notifications")
+      .then((data) => {
+        if (!cancelled) setUnread(Number(data?.unread) || 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [view, user, page]);
 
   const loadVisit = useCallback(async (id, { force } = {}) => {
     if (!id) {
@@ -315,23 +353,12 @@ export default function App() {
     if (still) return;
     const c = treeData[0];
     const s = c.sites[0];
-    const v = s.visits[0];
-    setSel({ customerId: c.id, siteId: s.id, visitId: v ? v.id : null });
+    setSel({ customerId: c.id, siteId: s.id, visitId: null });
     setFilter("all");
   }, [treeStatus, treeData, sel.customerId, sel.siteId]);
 
   const client = treeData.find((c) => c.id === sel.customerId) || null;
   const site = client?.sites.find((s) => s.id === sel.siteId) || null;
-
-  useEffect(() => {
-    const lines = visitFull?.lines || [];
-    const next = new Set();
-    lines.forEach((line) => {
-      const s = splitLine(line);
-      if (s.ns + s.oos > 0) next.add(line.id);
-    });
-    setOpen(next);
-  }, [visitFull?.id]);
 
   useEffect(() => {
     const dlg = dialogRef.current;
@@ -348,6 +375,45 @@ export default function App() {
     setFilter("all");
   }
 
+  async function saveVisitEdit(e) {
+    e.preventDefault();
+    if (!editVisit?.id) return;
+    if (!canDo(user, "update")) return notify.err("Your access level cannot edit surveys");
+    setBusy(true);
+    try {
+      await api("PATCH", `/survey/visits/${editVisit.id}`, {
+        body: {
+          visited_at: new Date(editVisit.visited_at).toISOString(),
+          notes: editVisit.notes,
+          technician_name: editVisit.technician_name,
+        },
+      });
+      notify.ok("Survey updated");
+      setEditVisit(null);
+      visitCache.current.delete(editVisit.id);
+      await loadTree();
+      if (sel.visitId === editVisit.id) await loadVisit(editVisit.id, { force: true });
+    } catch (err) {
+      notify.err(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeVisit(id) {
+    if (!canDo(user, "delete")) return notify.err("Your access level cannot delete surveys");
+    if (!window.confirm("Delete this survey visit and its photos? This cannot be undone.")) return;
+    try {
+      await api("DELETE", `/survey/visits/${id}`);
+      notify.ok("Survey deleted");
+      visitCache.current.delete(id);
+      if (sel.visitId === id) setSel((s) => ({ ...s, visitId: null }));
+      await loadTree();
+    } catch (err) {
+      notify.err(err.message);
+    }
+  }
+
   async function login(e) {
     e?.preventDefault?.();
     setAuthErr("");
@@ -357,25 +423,15 @@ export default function App() {
       const fromApi = sessionUser(res.user);
       setSession(res.token, fromApi);
       setUser(fromApi);
+      setPage("dashboard");
       setView(hasSurveyAccess(fromApi.role) ? "app" : "denied");
+      notify.ok(`Welcome, ${fromApi.name}`);
     } catch (err) {
       setAuthErr(err.message || "Could not sign in");
+      notify.err(err.message || "Could not sign in");
     } finally {
       setBusy(false);
     }
-  }
-
-  function toggleRow(id) {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function onRowKey(e, handler) {
-    if (e.key === "Enter") handler();
   }
 
   async function onPhotoError(photo) {
@@ -408,51 +464,53 @@ export default function App() {
       .filter(Boolean);
   }, [treeData, q]);
 
+  const officeKpis = useMemo(() => {
+    let drafts = 0;
+    let submitted = 0;
+    let ns = 0;
+    let oos = 0;
+    for (const v of visits) {
+      if (v.status === "Draft") drafts += 1;
+      else submitted += 1;
+      ns += Number(v.totals?.ns || 0);
+      oos += Number(v.totals?.oos || 0);
+    }
+    return { total: visits.length, drafts, submitted, ns, oos };
+  }, [visits]);
+
   const tree = filteredTree.map((c) => {
-    const clientOpen = !!q || c.id === sel.customerId;
+    const selected = c.id === sel.customerId;
+    const visitCount = (c.sites || []).reduce((n, s) => n + (s.visits?.length || 0), 0);
     return (
-      <details key={c.id} open={clientOpen}>
-        <summary>{c.label || c.name}</summary>
-        <div className="sites">
-          {c.sites.map((s) => {
-            const siteOpen = !!q || (c.id === sel.customerId && s.id === sel.siteId);
-            return (
-              <details key={s.id} open={siteOpen}>
-                <summary>{s.label || s.name}</summary>
-                <button
-                  className="sitebtn"
-                  type="button"
-                  aria-current={sel.customerId === c.id && sel.siteId === s.id && sel.visitId === null}
-                  onClick={() => go(c.id, s.id, null)}
-                >
-                  Visit history ({s.visits.length})
-                </button>
-                {s.visits.length ? (
-                  <ul className="visits">
-                    {s.visits.map((v) => (
-                      <li key={v.id}>
-                        <button
-                          type="button"
-                          aria-current={sel.visitId === v.id}
-                          onClick={() => go(c.id, s.id, v.id)}
-                        >
-                          {fmt(v.visited_at)}
-                          <small>
-                            {v.totals?.total ?? 0}
-                            {v.status ? ` · ${v.status}` : ""}
-                          </small>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="novisits">No visits yet</p>
-                )}
-              </details>
-            );
-          })}
-        </div>
-      </details>
+      <div key={c.id} className={`nav-client${selected ? " open" : ""}`}>
+        <button
+          type="button"
+          className={`nav-client-btn${selected ? " on" : ""}`}
+          onClick={() => go(c.id, c.sites[0]?.id || null, null)}
+        >
+          <span>
+            <b>{c.label || c.name}</b>
+            <small>
+              {c.sites.length} site{c.sites.length === 1 ? "" : "s"} · {visitCount} visit{visitCount === 1 ? "" : "s"}
+            </small>
+          </span>
+        </button>
+        {selected ? (
+          <div className="nav-sites">
+            {c.sites.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={sel.siteId === s.id ? "on" : ""}
+                onClick={() => go(c.id, s.id, null)}
+              >
+                <span>{s.label || s.name}</span>
+                <i>{s.visits.length}</i>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
     );
   });
 
@@ -469,50 +527,42 @@ export default function App() {
         <p className="crumbs">{client.label || client.name}</p>
         <h1>{site.label || site.name}</h1>
         <p className="meta">
-          {site.visits.length} saved visit{site.visits.length === 1 ? "" : "s"}. Select a visit to see
-          its equipment and photos.
+          {site.visits.length} visit{site.visits.length === 1 ? "" : "s"} at this site. Open a card to read equipment and photos.
         </p>
         {site.visits.length ? (
-          <div className="tablewrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Visit date</th>
-                  <th>Technician</th>
-                  <th className="n">Total</th>
-                  <th className="n">Good</th>
-                  <th className="n">Need service</th>
-                  <th className="n">OOS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {site.visits.map((v) => {
-                  const t = visitTotals(v);
-                  return (
-                    <tr
-                      key={v.id}
-                      className="clickable"
-                      tabIndex={0}
-                      onClick={() => go(sel.customerId, sel.siteId, v.id)}
-                      onKeyDown={(e) => onRowKey(e, () => go(sel.customerId, sel.siteId, v.id))}
-                    >
-                      <td>
-                        <b>{fmt(v.visited_at)}</b>
-                        <small>{fmtTime(v.visited_at)}</small>
-                      </td>
-                      <td>{v.technician_name || "—"}</td>
-                      <td className="n">{t.total}</td>
-                      <NumCell n={t.good} cls="g" />
-                      <NumCell n={t.ns} cls="s" />
-                      <NumCell n={t.oos} cls="o" />
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="visit-cards">
+            {site.visits.map((v) => {
+              const t = visitTotals(v);
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  className="visit-card"
+                  onClick={() => go(sel.customerId, sel.siteId, v.id)}
+                >
+                  <div className="visit-card-top">
+                    <div>
+                      <b>{fmt(v.visited_at)}</b>
+                      <small>
+                        {fmtTime(v.visited_at)} · {v.technician_name || "Technician"}
+                      </small>
+                    </div>
+                    <span className={`status-pill ${v.status === "Submitted" ? "ok" : "draft"}`}>
+                      {v.status || "Draft"}
+                    </span>
+                  </div>
+                  <div className="visit-mini">
+                    <span>{t.total} total</span>
+                    <span className="g">{t.good} good</span>
+                    <span className="s">{t.ns} service</span>
+                    <span className="o">{t.oos} OOS</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         ) : (
-          <p className="empty">No visits yet</p>
+          <p className="empty">No visits yet at this site.</p>
         )}
       </>
     );
@@ -542,14 +592,40 @@ export default function App() {
     const photoCount = lines.reduce((n, line) => n + (line.photos || []).length, 0);
     main = (
       <>
+        <button type="button" className="back-link" onClick={() => go(sel.customerId, sel.siteId, null)}>
+          <ChevronLeft size={18} /> Back to visits
+        </button>
         <p className="crumbs">
-          {client.label || client.name} › {site.label || site.name}
+          {client.label || client.name} · {site.label || site.name}
         </p>
         <h1>Visit on {fmt(v.visited_at)}</h1>
         <p className="meta">
-          Technician {v.technician_name || "—"}, started {fmtTime(v.visited_at)}. {lines.length} equipment records,{" "}
-          {photoCount} photos.
+          {v.technician_name || "Technician"} · {fmtTime(v.visited_at)} · {lines.length} records · {photoCount} photos
+          {v.status ? ` · ${v.status}` : ""}
         </p>
+        <div className="toolbar">
+          {v.status === "Draft" && canDo(user, "update") ? (
+            <button
+              type="button"
+              className="pbtn"
+              onClick={() =>
+                setEditVisit({
+                  id: v.id,
+                  visited_at: toLocalInput(v.visited_at),
+                  notes: v.notes || "",
+                  technician_name: v.technician_name || "",
+                })
+              }
+            >
+              <Pencil size={16} /> Edit visit
+            </button>
+          ) : null}
+          {canDo(user, "delete") ? (
+            <button type="button" className="pbtn danger" onClick={() => removeVisit(v.id)}>
+              <Trash2 size={16} /> Delete visit
+            </button>
+          ) : null}
+        </div>
         <Plate t={t} />
         <div className="filters" role="group" aria-label="Filter equipment">
           {F.map(([k, l]) => (
@@ -564,100 +640,59 @@ export default function App() {
             </button>
           ))}
         </div>
-        <div className="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Equipment</th>
-                <th>Specifications</th>
-                <th className="n">Qty</th>
-                <th className="n">Good</th>
-                <th className="n">Need service</th>
-                <th className="n">OOS</th>
-                <th>Photos</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length ? (
-                rows.map(({ line, split }) => {
-                  const photos = line.photos || [];
-                  const specs = specText(line, defMap);
-                  return (
-                    <Fragment key={line.id}>
-                      <tr
-                        className="row"
-                        tabIndex={0}
-                        aria-expanded={open.has(line.id)}
-                        onClick={() => toggleRow(line.id)}
-                        onKeyDown={(e) => onRowKey(e, () => toggleRow(line.id))}
-                      >
-                        <td>
-                          <b>{lineName(line)}</b>
-                          <small>{line.category}</small>
-                        </td>
-                        <td>{specs || <small>None recorded</small>}</td>
-                        <td className="n">{split.qty}</td>
-                        <NumCell n={split.good} cls="g" />
-                        <NumCell n={split.ns} cls="s" />
-                        <NumCell n={split.oos} cls="o" />
-                        <td>
-                          <span className="pbtn">
-                            {photos.length
-                              ? `${photos.length} photo${photos.length > 1 ? "s" : ""}`
-                              : "None"}
-                          </span>
-                        </td>
-                      </tr>
-                      {open.has(line.id) ? (
-                        <tr className="detail">
-                          <td colSpan={7}>
-                            {line.notes ? (
-                              <p>
-                                <b>Problem / observation:</b> {line.notes}
-                              </p>
-                            ) : (
-                              <p>No problem reported.</p>
-                            )}
-                            {photos.length ? (
-                              <div className="photos">
-                                {photos.map((p) => (
-                                  <button
-                                    key={p.id}
-                                    className="ph"
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setLightbox({
-                                        title: `${lineName(line)}, ${p.kind || "Photo"}`,
-                                        type: p.kind || "Other",
-                                        url: p.url,
-                                        id: p.id,
-                                      });
-                                    }}
-                                  >
-                                    <img src={p.url} alt={p.kind || "Photo"} />
-                                    <span>{p.kind || "Photo"}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            ) : (
-                              <small>No photos attached to this record.</small>
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={7} className="empty">
-                    No equipment matches this filter.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="eq-list">
+          {rows.length ? (
+            rows.map(({ line, split }) => {
+              const photos = line.photos || [];
+              const specs = specText(line, defMap);
+              return (
+                <article key={line.id} className="eq-card">
+                  <div className="eq-head">
+                    <div>
+                      <b>{lineName(line)}</b>
+                      <small>{line.category}</small>
+                    </div>
+                    <strong>× {split.qty}</strong>
+                  </div>
+                  {specs ? <p className="eq-specs">{specs}</p> : null}
+                  <div className="visit-mini">
+                    {split.good ? <span className="g">Good {split.good}</span> : null}
+                    {split.ns ? <span className="s">Need service {split.ns}</span> : null}
+                    {split.oos ? <span className="o">OOS {split.oos}</span> : null}
+                  </div>
+                  {line.notes ? (
+                    <p className="eq-note">
+                      <b>Observation:</b> {line.notes}
+                    </p>
+                  ) : null}
+                  {photos.length ? (
+                    <div className="photos">
+                      {photos.map((p) => (
+                        <button
+                          key={p.id}
+                          className="ph"
+                          type="button"
+                          onClick={() =>
+                            setLightbox({
+                              title: `${lineName(line)}, ${p.kind || "Photo"}`,
+                              type: p.kind || "Other",
+                              url: p.url,
+                              id: p.id,
+                            })
+                          }
+                        >
+                          <img src={p.url} alt={p.kind || "Photo"} />
+                          <span>{p.kind || "Photo"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })
+          ) : (
+            <p className="empty">No equipment matches this filter.</p>
+          )}
         </div>
       </>
     );
@@ -665,17 +700,20 @@ export default function App() {
 
   const treeNodes = tree;
 
+  const staff = isOfficeAdmin(user?.role);
+
   const header = (
     <header className="top">
-      <span className="brand">CULINOVA</span>
-      <span className="sec">Equipment surveys</span>
+      <span className="sec">{page === "surveys" ? "Surveys" : page === "dashboard" ? "Dashboard" : "Survey office"}</span>
       {user && view !== "login" && view !== "boot" ? (
         <span className="who">
+          <span className="avatar">{initials(user.name)}</span>
           <span>
             {user.name} · {user.role}
           </span>
+          <InboxBell unread={unread} onUnread={setUnread} onSeeAll={() => setPage("notifications")} />
           <button type="button" onClick={logout}>
-            Logout
+            <LogOut size={16} /> Logout
           </button>
         </span>
       ) : null}
@@ -686,7 +724,7 @@ export default function App() {
     return (
       <div className="auth-page">
         <div className="logincard">
-          <div className="auth-mark" aria-hidden="true">C</div>
+          <Logo className="logo-lg" />
           <p className="loading">Checking session…</p>
         </div>
       </div>
@@ -697,8 +735,7 @@ export default function App() {
     return (
       <div className="auth-page">
         <div className="logincard">
-          <div className="auth-mark" aria-hidden="true">C</div>
-          <p className="auth-brand">CULINOVA</p>
+          <Logo className="logo-lg" />
           <h1>Cannot reach the server</h1>
           <p className="meta">Your session is still saved. Try again when the API is available.</p>
           <button className="signin" type="button" onClick={bootSession}>
@@ -713,10 +750,9 @@ export default function App() {
     return (
       <div className="auth-page">
         <form className="logincard" onSubmit={login}>
-          <div className="auth-mark" aria-hidden="true">C</div>
-          <p className="auth-brand">CULINOVA</p>
-          <h1>Office surveys</h1>
-          <p className="meta">Read-only view of site equipment visits.</p>
+          <Logo className="logo-lg" />
+          <h1>Survey office</h1>
+          <p className="meta">Sign in to manage surveys, staff and notifications.</p>
           <div className="field">
             <label className="f" htmlFor="login-email">Email</label>
             <input
@@ -754,8 +790,7 @@ export default function App() {
     return (
       <div className="auth-page">
         <div className="logincard">
-          <div className="auth-mark" aria-hidden="true">C</div>
-          <p className="auth-brand">CULINOVA</p>
+          <Logo className="logo-lg" />
           <h1>No access</h1>
           <p className="meta">You do not have access to Equipment Survey.</p>
           <button className="signin ghost" type="button" onClick={logout}>
@@ -767,35 +802,109 @@ export default function App() {
   }
 
   return (
-    <>
-      {header}
-      <div className="shell">
-        <nav className="side" aria-label="Clients, sites and visits">
-          <label htmlFor="find" style={{ position: "absolute", left: -9999 }}>
-            Search clients and sites
-          </label>
-          <input
-            id="find"
-            type="search"
-            placeholder="Search client or site"
-            value={find}
-            onChange={(e) => setFind(e.target.value)}
-            onInput={(e) => setFind(e.target.value)}
-          />
-          <div id="tree">
-            {treeStatus === "loading" || treeStatus === "idle" ? (
-              <LoadingLine text="Loading clients…" />
-            ) : treeStatus === "error" ? (
-              <ErrorLine message={treeErr} onRetry={loadTree} />
-            ) : treeNodes.length ? (
-              treeNodes
-            ) : (
-              <p className="empty">{find.trim() ? "No client or site matches." : "No survey sites yet."}</p>
-            )}
+    <div className="office">
+      <Layout
+        page={page}
+        onPage={setPage}
+        user={user}
+        onLogout={logout}
+        staff={staff}
+        navOpen={navOpen}
+        setNavOpen={setNavOpen}
+        unread={unread}
+      />
+      <div className="office-body">
+        {header}
+        {page === "dashboard" ? (
+          <main className="main">
+            <DashboardPage kpis={officeKpis} ready={treeStatus === "ready"} staff={staff} onGo={setPage} />
+          </main>
+        ) : null}
+        {page === "admins" && staff ? (
+          <main className="main">
+            <UsersPage kind="admin" me={user} />
+          </main>
+        ) : null}
+        {page === "subadmins" && staff ? (
+          <main className="main">
+            <UsersPage kind="subadmin" me={user} />
+          </main>
+        ) : null}
+        {page === "technicians" && staff ? (
+          <main className="main">
+            <UsersPage kind="technician" me={user} />
+          </main>
+        ) : null}
+        {page === "notifications" ? (
+          <main className="main">
+            <NotificationsPage me={user} staff={staff} />
+          </main>
+        ) : null}
+        {page === "surveys" ? (
+          <div className="shell survey-shell">
+            <nav className="side" aria-label="Clients and sites">
+              <div className="side-search">
+                <Search size={16} />
+                <input
+                  id="find"
+                  type="search"
+                  placeholder="Search client or site"
+                  value={find}
+                  onChange={(e) => setFind(e.target.value)}
+                  onInput={(e) => setFind(e.target.value)}
+                />
+              </div>
+              <div id="tree" className="navlist">
+                {treeStatus === "loading" || treeStatus === "idle" ? (
+                  <LoadingLine text="Loading clients…" />
+                ) : treeStatus === "error" ? (
+                  <ErrorLine message={treeErr} onRetry={loadTree} />
+                ) : treeNodes.length ? (
+                  treeNodes
+                ) : (
+                  <p className="empty">{find.trim() ? "No client or site matches." : "No survey sites yet."}</p>
+                )}
+              </div>
+            </nav>
+            <main className="main survey-main">{main}</main>
           </div>
-        </nav>
-        <main className="main">{main}</main>
+        ) : null}
       </div>
+      {editVisit ? (
+        <div className="modal" onClick={() => setEditVisit(null)}>
+          <form className="logincard" onClick={(e) => e.stopPropagation()} onSubmit={saveVisitEdit}>
+            <h1>Edit survey visit</h1>
+            <div className="field">
+              <label className="f">Date and time</label>
+              <input
+                className="in"
+                type="datetime-local"
+                value={editVisit.visited_at}
+                onChange={(e) => setEditVisit({ ...editVisit, visited_at: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label className="f">Technician name</label>
+              <input
+                className="in"
+                value={editVisit.technician_name}
+                onChange={(e) => setEditVisit({ ...editVisit, technician_name: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label className="f">Notes</label>
+              <textarea
+                className="in"
+                rows={4}
+                value={editVisit.notes}
+                onChange={(e) => setEditVisit({ ...editVisit, notes: e.target.value })}
+              />
+            </div>
+            <button className="signin" type="submit" disabled={busy}>{busy ? "Saving…" : "Save visit"}</button>
+            <button className="signin ghost" type="button" onClick={() => setEditVisit(null)}>Cancel</button>
+          </form>
+        </div>
+      ) : null}
       <dialog
         id="lightbox"
         ref={dialogRef}
@@ -818,6 +927,6 @@ export default function App() {
           </button>
         </div>
       </dialog>
-    </>
+    </div>
   );
 }

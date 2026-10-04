@@ -4,6 +4,7 @@ import { api, ApiError, clearSession, failedSaveMessage, getToken, setOnUnauthor
 import { catalogFromApi, catalogFromMaster, otherTypeForCategory } from "./catalog";
 import { PHOTO_TYPES, NETWORK_SAVE_MSG, hasSurveyAccess } from "./constants";
 import { fileToJpegDataUrl } from "./photos";
+import { Logo } from "./Logo";
 
 const FALLBACK = catalogFromMaster();
 
@@ -452,6 +453,70 @@ function EquipmentFormBody({
   );
 }
 
+function initials(name) {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return "ST";
+  return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+}
+
+function greetNow() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function isToday(iso) {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+}
+
+function visitStatus(v) {
+  return String(v?.status || "Draft");
+}
+
+function IcoHome() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M12 3.2 3.5 10.2V21h6.2v-6.4h4.6V21h6.2V10.2L12 3.2Z" />
+    </svg>
+  );
+}
+function IcoClip() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M8 4.5A2.5 2.5 0 0 1 10.5 2h3A2.5 2.5 0 0 1 16 4.5V6h3.2c.99 0 1.8.81 1.8 1.8v11.7c0 .99-.81 1.8-1.8 1.8H4.8c-.99 0-1.8-.81-1.8-1.8V7.8C3 6.81 3.81 6 4.8 6H8V4.5Zm2 1.5h4V4.5c0-.28-.22-.5-.5-.5h-3c-.28 0-.5.22-.5.5V6Z" />
+    </svg>
+  );
+}
+function IcoCal() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M7 2.5h2v2h6v-2h2v2h2.5A1.5 1.5 0 0 1 21 6v13.5A1.5 1.5 0 0 1 19.5 21h-15A1.5 1.5 0 0 1 3 19.5V6A1.5 1.5 0 0 1 4.5 4.5H7v-2ZM5 9.5v10h14v-10H5Z" />
+    </svg>
+  );
+}
+function IcoBell() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M12 2.8a6.2 6.2 0 0 1 6.2 6.2v3.1l1.4 2.8H4.4L5.8 12.1V9A6.2 6.2 0 0 1 12 2.8Zm-2.3 15.5h4.6a2.3 2.3 0 0 1-4.6 0Z" />
+    </svg>
+  );
+}
+function IcoOut() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M10 4.5h8.5V19.5H10v-2h6.5V6.5H10v-2ZM4.5 12l5-4v2.5h6v3h-6V16l-5-4Z" />
+    </svg>
+  );
+}
+
 function UserBar({ user, onLogout }) {
   if (!user) return null;
   return (
@@ -461,6 +526,26 @@ function UserBar({ user, onLogout }) {
         Logout
       </button>
     </div>
+  );
+}
+
+function TabBar({ tab, onTab, hide }) {
+  if (hide) return null;
+  return (
+    <nav className="tabbar" aria-label="Technician">
+      <button type="button" className={tab === "home" ? "on" : ""} onClick={() => onTab("home")}>
+        <IcoHome />
+        Home
+      </button>
+      <button type="button" className={tab === "record" ? "on" : ""} onClick={() => onTab("record")}>
+        <IcoClip />
+        Record
+      </button>
+      <button type="button" className={tab === "visits" ? "on" : ""} onClick={() => onTab("visits")}>
+        <IcoCal />
+        Visits
+      </button>
+    </nav>
   );
 }
 
@@ -541,7 +626,10 @@ export default function App() {
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [drafts, setDrafts] = useState([]);
+  const [allVisits, setAllVisits] = useState([]);
   const [draftsStatus, setDraftsStatus] = useState("idle");
+  const [tab, setTab] = useState("home");
+  const [noticesOpen, setNoticesOpen] = useState(false);
   const [client, setClient] = useState("");
   const [site, setSite] = useState("");
   const [newSiteName, setNewSiteName] = useState("");
@@ -572,7 +660,10 @@ export default function App() {
     setUser(null);
     setVisit(null);
     setDrafts([]);
+    setAllVisits([]);
     setDraftsStatus("idle");
+    setTab("home");
+    setNoticesOpen(false);
     setView("login");
   }, []);
 
@@ -602,7 +693,12 @@ export default function App() {
       };
       setSession(getToken() || token, fromApi);
       setUser(fromApi);
-      setView(hasSurveyAccess(fromApi.role) ? "start" : "denied");
+      if (hasSurveyAccess(fromApi.role)) {
+        setTab("home");
+        setView("start");
+      } else {
+        setView("denied");
+      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         setUser(null);
@@ -661,13 +757,16 @@ export default function App() {
         }
       }
       try {
-        const d = await api("GET", "/survey/visits?status=Draft");
+        const d = await api("GET", "/survey/visits");
         if (!cancelled) {
-          setDrafts(Array.isArray(d) ? d : []);
+          const list = Array.isArray(d) ? d : [];
+          setAllVisits(list);
+          setDrafts(list.filter((v) => visitStatus(v) === "Draft"));
           setDraftsStatus("ready");
         }
       } catch (e) {
         if (!cancelled && !(e instanceof ApiError && e.status === 401)) {
+          setAllVisits([]);
           setDrafts([]);
           setDraftsStatus("ready");
         }
@@ -712,6 +811,28 @@ export default function App() {
     return localTotals(visit.items || []);
   }, [visit]);
 
+  const kpis = useMemo(() => {
+    const draftsList = allVisits.filter((v) => visitStatus(v) === "Draft");
+    const doneList = allVisits.filter((v) => visitStatus(v) === "Submitted");
+    const inProgress = draftsList.filter((v) => Number(v.totals?.total || 0) > 0);
+    const todayList = allVisits.filter((v) => isToday(v.visited_at));
+    return {
+      assigned: draftsList.length,
+      inProgress: inProgress.length,
+      done: doneList.length,
+      today: todayList.length,
+      draftsList,
+      doneList,
+      todayList,
+    };
+  }, [allVisits]);
+
+  function goShell(nextTab) {
+    setNoticesOpen(false);
+    setTab(nextTab);
+    if (view === "done" || view === "start") show("start");
+  }
+
   function show(v) {
     setView(v);
   }
@@ -734,7 +855,10 @@ export default function App() {
       setUser(fromApi);
       catalogLoaded.current = false;
       if (!hasSurveyAccess(fromApi.role)) show("denied");
-      else show("start");
+      else {
+        setTab("home");
+        show("start");
+      }
     } catch (err) {
       setAuthErr(err.message || "Could not sign in");
     } finally {
@@ -1169,13 +1293,72 @@ export default function App() {
 
   const pick = view === "pick" ? renderPickBody() : null;
   const readonly = !!visit?.readonly;
+  const inFlow = view !== "start" && view !== "done";
+
+  const dashHead = (
+    <header className="dash-head">
+      <div className="dash-brand">
+        <Logo tone="light" className="logo logo-on-dark" />
+        <div className="dash-who">
+          <span className="dash-kicker">CULINOVA · TECHNICIAN</span>
+          <strong>{user?.name || "Technician"}</strong>
+        </div>
+      </div>
+      <div className="dash-actions">
+        <span className="avatar" title={user?.name || ""}>
+          {initials(user?.name)}
+        </span>
+        <button
+          className="iconbtn"
+          type="button"
+          aria-label="Notifications"
+          aria-expanded={noticesOpen}
+          onClick={() => setNoticesOpen((o) => !o)}
+        >
+          <IcoBell />
+          {kpis.assigned ? <i>{kpis.assigned > 9 ? "9+" : kpis.assigned}</i> : null}
+        </button>
+        <button className="iconbtn" type="button" aria-label="Log out" onClick={logout}>
+          <IcoOut />
+        </button>
+      </div>
+    </header>
+  );
+
+  const noticeSheet = noticesOpen ? (
+    <div className="notice-sheet" role="region" aria-label="Notifications">
+      <b>Open surveys</b>
+      {kpis.draftsList.length ? (
+        kpis.draftsList.map((d) => (
+          <button
+            key={d.id}
+            type="button"
+            className="notice-row"
+            onClick={() => {
+              setNoticesOpen(false);
+              continueVisit(d.id);
+            }}
+          >
+            <span>
+              {d.site?.name || "Site"}
+              <small>
+                {d.site?.customer?.name || ""} · {fmtDate(d.visited_at)} · Draft
+              </small>
+            </span>
+          </button>
+        ))
+      ) : (
+        <p>You are caught up. No draft surveys waiting.</p>
+      )}
+    </div>
+  ) : null;
 
   if (view === "boot") {
     return (
       <div className="app app-auth">
         <section className="view on auth-view">
           <div className="auth-panel">
-            <div className="auth-mark" aria-hidden="true">C</div>
+            <Logo className="logo-lg" />
             <p className="loading" style={{ textAlign: "center" }}>Checking session…</p>
           </div>
         </section>
@@ -1188,8 +1371,7 @@ export default function App() {
       <div className="app app-auth">
         <section className="view on auth-view">
           <div className="auth-panel">
-            <div className="auth-mark" aria-hidden="true">C</div>
-            <p className="auth-brand">CULINOVA</p>
+            <Logo className="logo-lg" />
             <h1 className="auth-title">Cannot reach the server</h1>
             <p className="auth-sub">Your session is still saved. Try again when the API is available.</p>
             <button className="btn big" type="button" onClick={bootSession}>
@@ -1206,8 +1388,7 @@ export default function App() {
       <div className="app app-auth">
         <section className="view on auth-view">
           <form className="auth-panel" onSubmit={login}>
-            <div className="auth-mark" aria-hidden="true">C</div>
-            <p className="auth-brand">CULINOVA</p>
+            <Logo className="logo-lg" />
             <h1 className="auth-title">Technician survey</h1>
             <p className="auth-sub">Sign in to record equipment on site.</p>
             <div className="field">
@@ -1249,8 +1430,7 @@ export default function App() {
       <div className="app app-auth">
         <section className="view on auth-view">
           <div className="auth-panel">
-            <div className="auth-mark" aria-hidden="true">C</div>
-            <p className="auth-brand">CULINOVA</p>
+            <Logo className="logo-lg" />
             <h1 className="auth-title">No access</h1>
             <p className="auth-sub">You do not have access to Equipment Survey.</p>
             <UserBar user={user} onLogout={logout} />
@@ -1261,16 +1441,113 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${inFlow ? "" : " app-shell"}`}>
       <section className={`view${view === "start" ? " on" : ""}`} id="v-start">
-        <header className="bar">
-          <h1>
-            <span className="brand">CULINOVA</span>
-            <small>Equipment condition survey</small>
-          </h1>
-        </header>
+        {dashHead}
+        {noticeSheet}
+        {tab === "home" ? (
+          <div className="pad dash-home">
+            <p className="hello">
+              {greetNow()},
+              <strong>
+                {user?.name || "Technician"} <span aria-hidden="true">👷</span>
+              </strong>
+            </p>
+            <div className="kpis">
+              <button type="button" className="kpi" onClick={() => goShell("visits")}>
+                <span className="kpi-ico muted">
+                  <IcoClip />
+                </span>
+                <b>{draftsStatus === "ready" ? kpis.assigned : "—"}</b>
+                <span>Assigned</span>
+              </button>
+              <button type="button" className="kpi" onClick={() => goShell("visits")}>
+                <span className="kpi-ico blue">
+                  <IcoCal />
+                </span>
+                <b>{draftsStatus === "ready" ? kpis.inProgress : "—"}</b>
+                <span>In progress</span>
+              </button>
+              <button type="button" className="kpi" onClick={() => goShell("visits")}>
+                <span className="kpi-ico green">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="currentColor" d="M9.2 16.3 4.8 11.9l1.5-1.5 2.9 2.9 8.5-8.5 1.5 1.5-10 10Z" />
+                  </svg>
+                </span>
+                <b>{draftsStatus === "ready" ? kpis.done : "—"}</b>
+                <span>Done</span>
+              </button>
+            </div>
+            <div className="sec-row">
+              <h2>Today’s jobs</h2>
+              <button type="button" className="linkish" onClick={() => goShell("visits")}>
+                See all
+              </button>
+            </div>
+            <div className="job-banner">
+              <p>
+                <IcoCal /> {kpis.today} survey visit{kpis.today === 1 ? "" : "s"} scheduled today
+              </p>
+              <button type="button" onClick={() => goShell("visits")}>
+                View visits
+              </button>
+            </div>
+            {kpis.draftsList.length ? (
+              <div className="open-list">
+                {kpis.draftsList.slice(0, 3).map((d) => (
+                  <button key={d.id} className="item" type="button" onClick={() => continueVisit(d.id)}>
+                    <div className="top">
+                      <b>{d.site?.name || "Site"}</b>
+                      <span className="q">{d.totals?.total ?? 0}</span>
+                    </div>
+                    <p>
+                      {d.site?.customer?.name || ""} · {fmtDate(d.visited_at)} · Continue
+                    </p>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <button className="btn big cta-record" type="button" onClick={() => goShell("record")}>
+              Record equipment survey
+            </button>
+          </div>
+        ) : null}
+        {tab === "visits" ? (
+          <div className="pad">
+            <h2 className="panel-title">My visits</h2>
+            {draftsStatus !== "ready" ? (
+              <p className="hint">Loading visits…</p>
+            ) : !allVisits.length ? (
+              <div className="empty">
+                <b>No visits yet</b>
+                Start a survey from Record.
+              </div>
+            ) : (
+              allVisits.map((d) => (
+                <button
+                  key={d.id}
+                  className="item"
+                  type="button"
+                  onClick={() => continueVisit(d.id)}
+                >
+                  <div className="top">
+                    <b>{d.site?.name || "Site"}</b>
+                    <span className={`status-pill ${visitStatus(d) === "Submitted" ? "ok" : "draft"}`}>
+                      {visitStatus(d)}
+                    </span>
+                  </div>
+                  <p>
+                    {d.site?.customer?.name || ""} · {fmtDate(d.visited_at)} · {d.totals?.total ?? 0} units
+                  </p>
+                </button>
+              ))
+            )}
+          </div>
+        ) : null}
+        {tab === "record" ? (
+          <>
         <div className="pad">
-          <UserBar user={user} onLogout={logout} />
+          <h2 className="panel-title">Record a survey</h2>
           {draftsStatus !== "ready" ? (
             <p className="hint" id="drafts-status">Checking for open visits...</p>
           ) : drafts.length ? (
@@ -1364,10 +1641,15 @@ export default function App() {
         <div className="dock">
           <ActionBtn busy={busy} idle="Start visit" busyLabel="Starting visit…" onClick={startVisit} />
         </div>
+          </>
+        ) : null}
       </section>
 
       <section className={`view${view === "visit" ? " on" : ""}`} id="v-visit">
         <header className="bar">
+          <button className="back" type="button" aria-label="Dashboard" onClick={() => { setTab("home"); show("start"); }}>
+            ‹
+          </button>
           <h1>
             {visit?.site}
             {visit ? (
@@ -1583,11 +1865,14 @@ export default function App() {
       </section>
 
       <section className={`view${view === "done" ? " on" : ""}`} id="v-done">
-        <header className="bar">
-          <h1>
-            <span className="brand">CULINOVA</span>
-            <small>Equipment condition survey</small>
-          </h1>
+        <header className="dash-head">
+          <div className="dash-brand">
+            <Logo tone="light" className="logo logo-on-dark" />
+            <div className="dash-who">
+              <span className="dash-kicker">CULINOVA · TECHNICIAN</span>
+              <strong>Visit saved</strong>
+            </div>
+          </div>
         </header>
         <div className="pad">
           {visit && t ? (
@@ -1612,11 +1897,16 @@ export default function App() {
               setVisit(null);
               setDate(nowLocal());
               setFinishErr("");
+              setTab("home");
               show("start");
-              api("GET", "/survey/visits?status=Draft").then((d) => setDrafts(Array.isArray(d) ? d : [])).catch(() => {});
+              api("GET", "/survey/visits").then((d) => {
+                const list = Array.isArray(d) ? d : [];
+                setAllVisits(list);
+                setDrafts(list.filter((v) => visitStatus(v) === "Draft"));
+              }).catch(() => {});
             }}
           >
-            Start another visit
+            Back to dashboard
           </button>
         </div>
       </section>
@@ -1647,6 +1937,7 @@ export default function App() {
           e.target.value = "";
         }}
       />
+      <TabBar hide={inFlow} tab={tab} onTab={goShell} />
     </div>
   );
 }

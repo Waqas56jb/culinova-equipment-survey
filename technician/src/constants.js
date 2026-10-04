@@ -7,11 +7,10 @@ export const PHOTO_TYPES = [
   'Other',
 ]
 
-/** Mirror of ERP server survey panel roles (client-side gate only). */
+/** Field tech + survey office only. ERP PM / site / service stay in the main ERP. */
 export function hasSurveyAccess(role) {
-  const r = String(role || '')
-  if (r === 'Management' || r === 'System Admin') return true
-  return ['Project Manager', 'Site Engineer', 'Technician', 'Service User'].includes(r)
+  const r = String(role || "")
+  return r === "Management" || r === "System Admin" || r === "Technician"
 }
 
 export const NETWORK_SAVE_MSG = 'Not saved. Check connection and try again'
