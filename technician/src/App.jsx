@@ -381,16 +381,16 @@ function EquipmentFormBody({
           Photos{draft.photos.length ? ` (${draft.photos.length})` : ""}
         </h2>
         {!readonly ? (
-          <div className="photo-actions">
+        <div className="photo-actions">
             <label className={`btn ghost${photoBusy ? " is-busy" : ""}`} htmlFor="cam">
               {photoBusy ? <Spinner ghost /> : null}
-              Take photo
-            </label>
+            Take photo
+          </label>
             <label className={`btn ghost${photoBusy ? " is-busy" : ""}`} htmlFor="gal">
               {photoBusy ? <Spinner ghost /> : null}
-              From gallery
-            </label>
-          </div>
+            From gallery
+          </label>
+        </div>
         ) : null}
         {draft.photos.length ? (
           <div className="thumbs">
@@ -398,15 +398,15 @@ function EquipmentFormBody({
               <div className="thumb" key={photoKey(p) || i} data-photo-id={p.id || p.localId || ""}>
                 <img src={p.url} alt={`Photo ${i + 1}`} />
                 {!readonly ? (
-                  <button
-                    type="button"
-                    className="x"
-                    aria-label={`Delete photo ${i + 1}`}
+                <button
+                  type="button"
+                  className="x"
+                  aria-label={`Delete photo ${i + 1}`}
                     data-photo-key={photoKey(p)}
                     onClick={() => onDeletePhoto(photoKey(p))}
-                  >
-                    ×
-                  </button>
+                >
+                  ×
+                </button>
                 ) : null}
                 <select
                   aria-label={`Photo ${i + 1} type`}
@@ -898,7 +898,7 @@ export default function App() {
         siteId: site,
       });
       setVisit(next);
-      show("visit");
+    show("visit");
     } catch (err) {
       setStartErr(failedSaveMessage(err));
     } finally {
@@ -997,7 +997,7 @@ export default function App() {
         localId,
         url: dataUrl,
         dataUrl,
-        type: "",
+      type: "",
         name: (f.name || "photo").replace(/\.[^.]+$/, ".jpg"),
         status: lineId ? "uploading" : "pending",
       };
@@ -1072,7 +1072,7 @@ export default function App() {
       await refreshVisit(visit.id, visit);
       setFormErr("");
       setDraft(null);
-      show("visit");
+    show("visit");
     } catch (e) {
       if (e instanceof ApiError && e.status === 400) setFormErr(e.message);
       else setFormErr(failedSaveMessage(e));
@@ -1088,7 +1088,7 @@ export default function App() {
       return;
     }
     if (!draft.uid) {
-      show("visit");
+    show("visit");
       return;
     }
     setBusy(true);
@@ -1354,7 +1354,7 @@ export default function App() {
   ) : null;
 
   if (view === "boot") {
-    return (
+  return (
       <div className="app app-auth">
         <section className="view on auth-view">
           <div className="auth-panel">
@@ -1513,7 +1513,7 @@ export default function App() {
           </div>
         ) : null}
         {tab === "visits" ? (
-          <div className="pad">
+        <div className="pad">
             <h2 className="panel-title">My visits</h2>
             {draftsStatus !== "ready" ? (
               <p className="hint">Loading visits…</p>
@@ -1700,17 +1700,17 @@ export default function App() {
         </div>
         <div className="dock">
           {!readonly ? (
-            <button
-              className="btn big"
-              type="button"
-              onClick={() => {
-                setPickCat(null);
-                setQuery("");
-                show("pick");
-              }}
-            >
-              + Add equipment
-            </button>
+          <button
+            className="btn big"
+            type="button"
+            onClick={() => {
+              setPickCat(null);
+              setQuery("");
+              show("pick");
+            }}
+          >
+            + Add equipment
+          </button>
           ) : null}
           <button className="btn ghost" type="button" onClick={() => { setFinishErr(""); show("finish"); }}>
             Finish visit
@@ -1784,7 +1784,7 @@ export default function App() {
             <button className="btn big" type="button" disabled={busy} onClick={saveEquipment} aria-busy={busy || undefined}>
               {busy ? <Spinner /> : null}
               {busy ? "Saving…" : "Save equipment"}
-            </button>
+          </button>
           ) : null}
         </div>
       </section>
@@ -1859,7 +1859,7 @@ export default function App() {
             <button className="btn big" type="button" disabled={busy} onClick={finishSave} aria-busy={busy || undefined}>
               {busy ? <Spinner /> : null}
               {busy ? "Saving visit…" : "Save visit"}
-            </button>
+          </button>
           ) : null}
         </div>
       </section>

@@ -485,10 +485,10 @@ export default function App() {
   const tree = filteredTree.map((c) => {
     const selected = c.id === sel.customerId;
     const visitCount = (c.sites || []).reduce((n, s) => n + (s.visits?.length || 0), 0);
-    return (
+      return (
       <div key={c.id} className={`nav-client${selected ? " open" : ""}`}>
-        <button
-          type="button"
+                <button
+                  type="button"
           className={`nav-client-btn${selected ? " on" : ""}`}
           onClick={() => go(c.id, c.sites[0]?.id || null, null, { stayOnList: true })}
         >
@@ -498,25 +498,25 @@ export default function App() {
               {c.sites.length} site{c.sites.length === 1 ? "" : "s"} · {visitCount} visit{visitCount === 1 ? "" : "s"}
             </small>
           </span>
-        </button>
+                </button>
         {selected ? (
           <div className="nav-sites">
             {c.sites.map((s) => (
-              <button
+                      <button
                 key={s.id}
-                type="button"
+                        type="button"
                 className={sel.siteId === s.id ? "on" : ""}
                 onClick={() => go(c.id, s.id, null)}
-              >
+                      >
                 <span>{s.label || s.name}</span>
                 <i>{s.visits.length}</i>
-              </button>
+                      </button>
             ))}
           </div>
         ) : null}
       </div>
-    );
-  });
+      );
+    });
 
   let main;
   if (treeStatus === "loading" || treeStatus === "idle") {
@@ -540,7 +540,7 @@ export default function App() {
           <div className="visit-cards">
             {site.visits.map((v) => {
               const t = visitTotals(v);
-              return (
+                return (
                 <button
                   key={v.id}
                   type="button"
@@ -565,9 +565,9 @@ export default function App() {
                     <span className="o">{t.oos} OOS</span>
                   </div>
                 </button>
-              );
-            })}
-          </div>
+                );
+              })}
+        </div>
         ) : (
           <p className="empty">No visits yet at this site.</p>
         )}
@@ -648,7 +648,7 @@ export default function App() {
           ))}
         </div>
         <div className="eq-list">
-          {rows.length ? (
+              {rows.length ? (
             rows.map(({ line, split }) => {
               const photos = line.photos || [];
               const specs = specText(line, defMap);
@@ -673,12 +673,12 @@ export default function App() {
                     </p>
                   ) : null}
                   {photos.length ? (
-                    <div className="photos">
+                            <div className="photos">
                       {photos.map((p) => (
-                        <button
+                                <button
                           key={p.id}
-                          className="ph"
-                          type="button"
+                                  className="ph"
+                                  type="button"
                           onClick={() =>
                             setLightbox({
                               title: `${lineName(line)}, ${p.kind || "Photo"}`,
@@ -690,10 +690,10 @@ export default function App() {
                         >
                           <img src={p.url} alt={p.kind || "Photo"} />
                           <span>{p.kind || "Photo"}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                                </button>
+                              ))}
+                            </div>
+                    ) : null}
                 </article>
               );
             })
@@ -859,12 +859,12 @@ export default function App() {
             <nav className="side" aria-label="Clients and sites">
               <div className="side-search">
                 <Search size={16} />
-                <input
-                  id="find"
-                  type="search"
-                  placeholder="Search client or site"
-                  value={find}
-                  onChange={(e) => setFind(e.target.value)}
+          <input
+            id="find"
+            type="search"
+            placeholder="Search client or site"
+            value={find}
+            onChange={(e) => setFind(e.target.value)}
                   onInput={(e) => setFind(e.target.value)}
                 />
               </div>
