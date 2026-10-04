@@ -1,7 +1,11 @@
 const TOKEN_KEY = 'culinova_survey_admin_token'
 const USER_KEY = 'culinova_survey_admin_user'
 
-export const BASE = String(import.meta.env.VITE_API_URL || 'http://localhost:5050/api').replace(/\/$/, '')
+const DEFAULT_API = import.meta.env.PROD
+  ? 'https://culinova-backend.vercel.app/api'
+  : 'http://localhost:5050/api'
+
+export const BASE = String(import.meta.env.VITE_API_URL || DEFAULT_API).replace(/\/$/, '')
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
