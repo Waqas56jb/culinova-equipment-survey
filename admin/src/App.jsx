@@ -4,7 +4,7 @@ import "./App.css";
 import { api, ApiError, clearSession, getToken, isNetworkError, setOnUnauthorized, setSession } from "./api";
 import { canDo, hasSurveyAccess, isOfficeAdmin } from "./constants";
 import { Logo } from "./Logo";
-import { Layout } from "./Layout";
+import { Layout, MenuButton } from "./Layout";
 import { DashboardPage } from "./DashboardPage";
 import { UsersPage } from "./UsersPage";
 import { NotificationsPage } from "./NotificationsPage";
@@ -704,18 +704,20 @@ export default function App() {
 
   const header = (
     <header className="top">
+      <MenuButton navOpen={navOpen} onToggle={() => setNavOpen((v) => !v)} />
       <span className="sec">{page === "surveys" ? "Surveys" : page === "dashboard" ? "Dashboard" : "Survey office"}</span>
       {user && view !== "login" && view !== "boot" ? (
-        <span className="who">
+        <div className="who">
           <span className="avatar">{initials(user.name)}</span>
-          <span>
+          <span className="who-name">
             {user.name} · {user.role}
           </span>
           <InboxBell unread={unread} onUnread={setUnread} onSeeAll={() => setPage("notifications")} />
-          <button type="button" onClick={logout}>
-            <LogOut size={16} /> Logout
+          <button className="logout-btn" type="button" onClick={logout}>
+            <LogOut size={16} />
+            <span>Logout</span>
           </button>
-        </span>
+        </div>
       ) : null}
     </header>
   );

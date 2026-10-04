@@ -20,10 +20,26 @@ const ITEMS = [
   { id: "notifications", label: "Notifications", Icon: Bell, staff: true },
 ];
 
+export function MenuButton({ navOpen, onToggle }) {
+  return (
+    <button
+      className="nav-burger"
+      type="button"
+      aria-label={navOpen ? "Close menu" : "Open menu"}
+      aria-expanded={navOpen}
+      onClick={onToggle}
+    >
+      {navOpen ? <X size={22} /> : <Menu size={22} />}
+    </button>
+  );
+}
+
 export function Layout({ page, onPage, user, onLogout, staff, navOpen, setNavOpen, unread }) {
   return (
     <>
-      {navOpen ? <button className="nav-scrim" type="button" aria-label="Close menu" onClick={() => setNavOpen(false)} /> : null}
+      {navOpen ? (
+        <button className="nav-scrim" type="button" aria-label="Close menu" onClick={() => setNavOpen(false)} />
+      ) : null}
       <aside className={`navside${navOpen ? " open" : ""}`}>
         <div className="nav-brand">
           <Logo tone="light" className="logo logo-on-dark" />
@@ -53,9 +69,6 @@ export function Layout({ page, onPage, user, onLogout, staff, navOpen, setNavOpe
           </button>
         </div>
       </aside>
-      <button className="nav-burger" type="button" aria-label="Open menu" onClick={() => setNavOpen(true)}>
-        {navOpen ? <X size={20} /> : <Menu size={20} />}
-      </button>
     </>
   );
 }

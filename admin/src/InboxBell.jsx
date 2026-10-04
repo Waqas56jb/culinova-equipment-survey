@@ -20,7 +20,13 @@ export function InboxBell({ unread, onUnread, onSeeAll }) {
       const next = !v;
       if (next && wrap.current) {
         const r = wrap.current.getBoundingClientRect();
-        setPos({ top: r.bottom + 8, right: Math.max(12, window.innerWidth - r.right) });
+        const gap = 8;
+        const width = Math.min(window.innerWidth - gap * 2, 380);
+        let left = r.right - width;
+        if (left < gap) left = gap;
+        if (left + width > window.innerWidth - gap) left = window.innerWidth - width - gap;
+        const maxH = Math.min(window.innerHeight - r.bottom - 16, 520);
+        setPos({ top: r.bottom + gap, left, width, maxHeight: Math.max(220, maxH) });
       }
       return next;
     });
@@ -82,7 +88,12 @@ export function InboxBell({ unread, onUnread, onSeeAll }) {
         {unread ? <i>{unread > 9 ? "9+" : unread}</i> : null}
       </button>
       {open ? (
-        <div className="bell-panel" role="dialog" aria-label="Notifications" style={{ top: pos.top, right: pos.right }}>
+        <div
+          className="bell-panel"
+          role="dialog"
+          aria-label="Notifications"
+          style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxHeight }}
+        >
           <div className="bell-head">
             <b>Notifications</b>
             {unread ? (
