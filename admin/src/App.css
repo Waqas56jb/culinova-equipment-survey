@@ -76,7 +76,7 @@ dialog img{width:100%;height:auto;display:block;max-height:70vh;object-fit:conta
 @keyframes spin{to{transform:rotate(360deg)}}
 
 .shell{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:0;flex:1;overflow:hidden}
-.survey-shell{height:100%}
+.survey-shell{height:100%;min-height:0}
 .side{background:#fff;border-right:1px solid var(--line);padding:12px;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .side-search{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:12px;padding:0 10px;background:var(--panel);margin-bottom:10px;flex:none}
 .side-search input{width:100%;min-height:42px;border:0;outline:none;background:transparent;padding:0}
@@ -108,7 +108,7 @@ summary:hover{background:#F1F4F5}
 .sitebtn{border:0;background:none;font-size:13.5px;font-weight:600;color:var(--action);padding:6px 10px;margin:0 0 4px 22px;border-radius:8px}
 
 .main{padding:22px 24px 40px;min-width:0;overflow:auto;overflow-x:hidden}
-.survey-main{min-height:0}
+.survey-main{min-height:0;overflow:auto}
 .office{display:flex;height:100dvh;overflow:hidden;align-items:stretch}
 .office-body{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:
   radial-gradient(900px 320px at 100% 0%, rgba(197,160,89,.18), transparent 50%),
@@ -197,6 +197,7 @@ dialog .cap button{min-height:40px;padding:6px 16px;border:1.5px solid var(--lin
 .office-body > .main{flex:1;min-height:0;overflow:auto}
 .office .top{flex:none;z-index:10}
 .office .shell{flex:1;min-height:0}
+.mobile-only{display:none}
 .page-head{margin:0 0 18px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 8px 20px rgba(22,35,46,.05)}
 .card h2{margin:0 0 14px;font-size:17px;display:flex;align-items:center;gap:8px}
@@ -230,7 +231,7 @@ textarea.in{min-height:96px;resize:vertical}
 
 @media (max-width:960px){
   .nav-burger{display:flex}
-  .navside{position:fixed;left:0;top:0;width:min(84vw,280px);height:100dvh;transform:translateX(-105%);transition:transform .2s ease;z-index:50;box-shadow:none}
+  .navside{position:fixed;left:0;top:0;width:min(84vw,280px);height:100dvh;transform:translateX(-105%);transition:transform .2s ease;z-index:50;box-shadow:none;flex:none;margin:0}
   .navside.open{transform:none;box-shadow:16px 0 40px rgba(8,24,32,.28)}
   .nav-scrim{display:block;position:fixed;inset:0;border:0;background:rgba(8,24,32,.45);z-index:40}
   .office .top{padding-left:12px;padding-right:12px}
@@ -239,8 +240,11 @@ textarea.in{min-height:96px;resize:vertical}
   .top .logout-btn span{display:none}
   .grid2,.quick-grid,.office-kpis{grid-template-columns:1fr 1fr}
   .form-card .signin{width:100%;min-width:0}
-  .shell{grid-template-columns:1fr;grid-template-rows:minmax(140px,30vh) minmax(0,1fr);min-height:0}
-  .side{border-right:0;border-bottom:1px solid var(--line);max-height:none}
+  .shell{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr);min-height:0}
+  .survey-shell.mobile-clients .survey-main{display:none}
+  .survey-shell.mobile-detail .side{display:none}
+  .side{border-right:0;max-height:none;height:100%}
+  .mobile-only{display:inline-flex}
   .main{padding:16px 14px calc(24px + env(safe-area-inset-bottom,0px))}
   .plate{grid-template-columns:repeat(2,1fr);max-width:none}
   .plate div{border-left:0;border-top:1px solid rgba(255,255,255,.14)}

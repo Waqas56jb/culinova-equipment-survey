@@ -177,6 +177,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
 
   const [sel, setSel] = useState({ customerId: null, siteId: null, visitId: null });
+  const [mobilePane, setMobilePane] = useState("clients");
   const [filter, setFilter] = useState("all");
   const [find, setFind] = useState("");
   const [lightbox, setLightbox] = useState(null);
@@ -370,9 +371,12 @@ export default function App() {
     }
   }, [lightbox]);
 
-  function go(customerId, siteId, visitId) {
+  function go(customerId, siteId, visitId, { stayOnList } = {}) {
     setSel({ customerId, siteId, visitId });
     setFilter("all");
+    if (stayOnList) setMobilePane("clients");
+    else if (siteId) setMobilePane("detail");
+    else setMobilePane("clients");
   }
 
   async function saveVisitEdit(e) {
@@ -486,7 +490,7 @@ export default function App() {
         <button
           type="button"
           className={`nav-client-btn${selected ? " on" : ""}`}
-          onClick={() => go(c.id, c.sites[0]?.id || null, null)}
+          onClick={() => go(c.id, c.sites[0]?.id || null, null, { stayOnList: true })}
         >
           <span>
             <b>{c.label || c.name}</b>
@@ -524,6 +528,9 @@ export default function App() {
   } else if (sel.visitId === null) {
     main = (
       <>
+        <button type="button" className="back-link mobile-only" onClick={() => setMobilePane("clients")}>
+          <ChevronLeft size={18} /> All clients
+        </button>
         <p className="crumbs">{client.label || client.name}</p>
         <h1>{site.label || site.name}</h1>
         <p className="meta">
@@ -702,6 +709,11 @@ export default function App() {
 
   const staff = isOfficeAdmin(user?.role);
 
+  function goPage(next) {
+    setPage(next);
+    if (next === "surveys") setMobilePane("clients");
+  }
+
   const header = (
     <header className="top">
       <MenuButton navOpen={navOpen} onToggle={() => setNavOpen((v) => !v)} />
@@ -712,7 +724,7 @@ export default function App() {
           <span className="who-name">
             {user.name} · {user.role}
           </span>
-          <InboxBell unread={unread} onUnread={setUnread} onSeeAll={() => setPage("notifications")} />
+          <InboxBell unread={unread} onUnread={setUnread} onSeeAll={() => goPage("notifications")} />
           <button className="logout-btn" type="button" onClick={logout}>
             <LogOut size={16} />
             <span>Logout</span>
@@ -807,7 +819,7 @@ export default function App() {
     <div className="office">
       <Layout
         page={page}
-        onPage={setPage}
+        onPage={goPage}
         user={user}
         onLogout={logout}
         staff={staff}
@@ -819,7 +831,7 @@ export default function App() {
         {header}
         {page === "dashboard" ? (
           <main className="main">
-            <DashboardPage kpis={officeKpis} ready={treeStatus === "ready"} staff={staff} onGo={setPage} />
+            <DashboardPage kpis={officeKpis} ready={treeStatus === "ready"} staff={staff} onGo={goPage} />
           </main>
         ) : null}
         {page === "admins" && staff ? (
@@ -843,7 +855,7 @@ export default function App() {
           </main>
         ) : null}
         {page === "surveys" ? (
-          <div className="shell survey-shell">
+          <div className={`shell survey-shell mobile-${mobilePane}`}>
             <nav className="side" aria-label="Clients and sites">
               <div className="side-search">
                 <Search size={16} />
