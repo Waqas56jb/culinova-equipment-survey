@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { api, ApiError, clearSession, failedSaveMessage, getToken, setOnUnauthorized, setSession } from "./api";
-import { catalogFromApi, catalogFromMaster, otherTypeForCategory } from "./catalog";
+import { catalogFromApi, catalogFromMaster, equipmentInCategory, otherTypeForCategory } from "./catalog";
 import { PHOTO_TYPES, NETWORK_SAVE_MSG, hasSurveyAccess } from "./constants";
 import { fileToJpegDataUrl } from "./photos";
 import { Logo } from "./Logo";
@@ -35,8 +35,69 @@ function ActionBtn({ busy, idle, busyLabel, className = "btn big", ...rest }) {
   );
 }
 
+function needsNsProblem(d) {
+  return d.cond === "ns" || (d.cond === "mixed" && d.ns > 0);
+}
+
+function needsOosProblem(d) {
+  return d.cond === "oos" || (d.cond === "mixed" && d.oos > 0);
+}
+
 function needsProblem(d) {
-  return d.cond === "ns" || d.cond === "oos" || (d.cond === "mixed" && d.ns + d.oos > 0);
+  return needsNsProblem(d) || needsOosProblem(d);
+}
+
+function parseLineNotes(notes) {
+  if (!notes) return { problem: "", problemNs: "", problemOos: "" };
+  try {
+    const j = JSON.parse(notes);
+    if (j && typeof j === "object" && !Array.isArray(j) && ("ns" in j || "oos" in j)) {
+      return { problem: "", problemNs: String(j.ns || ""), problemOos: String(j.oos || "") };
+    }
+  } catch {
+    /* plain text */
+  }
+  return { problem: String(notes), problemNs: "", problemOos: "" };
+}
+
+function encodeLineNotes(draft) {
+  if (draft.cond === "mixed") {
+    const o = {};
+    if (draft.ns > 0) o.ns = String(draft.problemNs || "").trim();
+    if (draft.oos > 0) o.oos = String(draft.problemOos || "").trim();
+    return JSON.stringify(o);
+  }
+  if (draft.cond === "ns" || draft.cond === "oos") return String(draft.problem || "").trim();
+  return "";
+}
+
+function formatLineNotes(notes) {
+  const p = parseLineNotes(notes);
+  if (p.problemNs || p.problemOos) {
+    return [
+      p.problemNs ? `Need service: ${p.problemNs}` : null,
+      p.problemOos ? `OOS: ${p.problemOos}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return p.problem || "";
+}
+
+function photosForBucket(photos, bucket) {
+  if (!bucket) return photos || [];
+  return (photos || []).filter((p) => (p.bucket || null) === bucket);
+}
+
+function scrollToField(field) {
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`[data-field="${field}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+}
+
+function photoCountLabel(n) {
+  return n === 1 ? "1 photo" : `${n} photos`;
 }
 
 function nowLocal() {
@@ -120,6 +181,19 @@ function fmtDate(s) {
     : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function fmtDateTime(s) {
+  const d = new Date(s);
+  return Number.isNaN(d.getTime())
+    ? s
+    : d.toLocaleString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
 function specText(it, defs) {
   return Object.entries(it.specs || {})
     .filter(([k, v]) => v !== "" && v != null && !k.endsWith("__other") && k !== "Custom Equipment Name")
@@ -180,7 +254,7 @@ function AttrField({ attrKey, value, otherValue, onSpec, defs, disabled }) {
               className="chip"
               disabled={disabled}
               aria-pressed={value === o}
-              onClick={() => onSpec(attrKey, value === o ? "" : o)}
+              onClick={() => onSpec(attrKey, o)}
             >
               {o}
             </button>
@@ -210,7 +284,7 @@ function AttrField({ attrKey, value, otherValue, onSpec, defs, disabled }) {
           min={d.t === "n" ? 0 : undefined}
           value={value}
           disabled={disabled}
-          placeholder="Leave empty if unknown"
+          placeholder="Required — type Unknown if not sure"
           onChange={(e) => onSpec(attrKey, e.target.value)}
         />
       )}
@@ -219,13 +293,109 @@ function AttrField({ attrKey, value, otherValue, onSpec, defs, disabled }) {
           className="in"
           style={{ marginTop: 8 }}
           type="text"
+          data-field={`spec-other-${attrKey}`}
           value={otherValue}
           disabled={disabled}
-          placeholder="Type the value"
+          placeholder="Type the custom value"
           aria-label={`${d.l}, other value`}
           onChange={(e) => onSpec(attrKey + "__other", e.target.value)}
         />
       ) : null}
+    </div>
+  );
+}
+
+function PhotoBlock({
+  title,
+  photos,
+  readonly,
+  photoBusy,
+  required,
+  fieldKey,
+  onArmBucket,
+  onDeletePhoto,
+  onPhotoType,
+  onRetryPhoto,
+}) {
+  return (
+    <div className="card" data-field={fieldKey}>
+      <h2>
+        {title}
+        {photos.length ? ` (${photos.length})` : ""}
+        {required ? " *" : ""}
+      </h2>
+      {!readonly ? (
+        <div className="photo-actions">
+          <label
+            className={`btn ghost${photoBusy ? " is-busy" : ""}`}
+            htmlFor="cam"
+            onClick={() => onArmBucket?.()}
+          >
+            {photoBusy ? <Spinner ghost /> : null}
+            Take photo
+          </label>
+          <label
+            className={`btn ghost${photoBusy ? " is-busy" : ""}`}
+            htmlFor="gal"
+            onClick={() => onArmBucket?.()}
+          >
+            {photoBusy ? <Spinner ghost /> : null}
+            From gallery
+          </label>
+        </div>
+      ) : null}
+      {photos.length ? (
+        <div className="thumbs">
+          {photos.map((p, i) => (
+            <div className="thumb" key={photoKey(p) || i} data-photo-id={p.id || p.localId || ""}>
+              <img src={p.url} alt={`Photo ${i + 1}`} />
+              {!readonly ? (
+                <button
+                  type="button"
+                  className="x"
+                  aria-label={`Delete photo ${i + 1}`}
+                  onClick={() => onDeletePhoto(photoKey(p))}
+                >
+                  ×
+                </button>
+              ) : null}
+              <select
+                aria-label={`Photo ${i + 1} type`}
+                value={p.type === "Interior/Filter" ? "Interior or Filter" : p.type}
+                disabled={readonly}
+                onChange={(e) => onPhotoType(photoKey(p), e.target.value)}
+              >
+                <option value="">No tag</option>
+                {PHOTO_TYPES.map((pt) => (
+                  <option key={pt} value={pt}>
+                    {pt}
+                  </option>
+                ))}
+              </select>
+              {p.status === "uploading" ? (
+                <div className="thumb-busy">
+                  <Spinner /> Uploading…
+                </div>
+              ) : null}
+              {p.status === "saved" ? <p className="hint">Saved</p> : null}
+              {p.status === "failed" ? (
+                <p className="hint">
+                  Failed.{" "}
+                  <button type="button" className="linkish" onClick={() => onRetryPhoto(photoKey(p))}>
+                    Retry
+                  </button>
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="hint">
+          {required
+            ? "At least one photo is required for this condition."
+            : "Optional. Add as many as you need."}
+        </p>
+      )}
     </div>
   );
 }
@@ -242,12 +412,27 @@ function EquipmentFormBody({
   onPhotoType,
   onRetryPhoto,
   onDelete,
+  onArmPhotoBucket,
 }) {
-  const showProblem = needsProblem(draft);
+  const mixed = draft.cond === "mixed";
+  const showNs = needsNsProblem(draft);
+  const showOos = needsOosProblem(draft);
+  const showSingleProblem = (draft.cond === "ns" || draft.cond === "oos") && !mixed;
+  const specKeys = (draft.attrs || []).filter((k) => k !== "Custom Equipment Name");
+  const nsPhotos = mixed ? photosForBucket(draft.photos, "ns") : draft.cond === "ns" ? draft.photos : [];
+  const oosPhotos = mixed ? photosForBucket(draft.photos, "oos") : draft.cond === "oos" ? draft.photos : [];
+  const generalPhotos = !needsProblem(draft)
+    ? draft.photos
+    : mixed
+      ? (draft.photos || []).filter((p) => !p.bucket)
+      : showSingleProblem
+        ? draft.photos
+        : [];
+
   return (
     <>
       {draft.custom ? (
-        <div className="card" key="custom-name">
+        <div className="card" key="custom-name" data-field="name">
           <div className="field" style={{ margin: 0 }}>
             <label className="f" htmlFor="cname">
               Equipment name
@@ -265,27 +450,28 @@ function EquipmentFormBody({
         </div>
       ) : null}
 
-      {draft.attrs.length ? (
-        <div className="card" key="specs">
+      {specKeys.length ? (
+        <div className="card" key="specs" data-field="specs">
           <h2>Specifications</h2>
-          {draft.attrs.map((k) => (
-            <AttrField
-              key={k}
-              attrKey={k}
-              defs={defs}
-              disabled={readonly}
-              value={draft.specs[k] ?? ""}
-              otherValue={draft.specs[k + "__other"] ?? ""}
-              onSpec={onSpec}
-            />
+          {specKeys.map((k) => (
+            <div key={k} data-field={`spec-${k}`}>
+              <AttrField
+                attrKey={k}
+                defs={defs}
+                disabled={readonly}
+                value={draft.specs[k] ?? ""}
+                otherValue={draft.specs[k + "__other"] ?? ""}
+                onSpec={onSpec}
+              />
+            </div>
           ))}
           <p className="hint" style={{ marginTop: -6 }}>
-            Not sure? Choose Unknown or leave it empty. Do not guess.
+            Not sure? Choose Unknown. Do not guess.
           </p>
         </div>
       ) : null}
 
-      <div className="card" key="qty">
+      <div className="card" key="qty" data-field="qty">
         <h2>Quantity</h2>
         <Stepper
           value={draft.qty}
@@ -296,7 +482,7 @@ function EquipmentFormBody({
         />
       </div>
 
-      <div className="card" key="condition">
+      <div className="card" key="condition" data-field="condition">
         <h2>Condition</h2>
         <div className="cond">
           {CONDITIONS.map(([k, l, c]) => (
@@ -319,7 +505,7 @@ function EquipmentFormBody({
             </button>
           ))}
         </div>
-        <div style={{ marginTop: 16 }} hidden={draft.cond !== "mixed"}>
+        <div style={{ marginTop: 16 }} hidden={draft.cond !== "mixed"} data-field="mixed">
           <div className="mixrow">
             <span>Good</span>
             <Stepper
@@ -359,85 +545,101 @@ function EquipmentFormBody({
         </div>
       </div>
 
-      <div className="card" key="problem" hidden={!showProblem}>
-        <label className="f" htmlFor="prob">
-          Problem / observation
-        </label>
-        <textarea
-          className="in"
-          id="prob"
-          disabled={readonly}
-          placeholder="Short note, e.g. compressor not starting"
-          value={draft.problem}
-          onChange={(e) => onUpdate({ problem: e.target.value })}
-        />
-        <p className="hint">
-          Take a photo of the nameplate so the office can read brand, model and serial.
-        </p>
-      </div>
-
-      <div className="card" key="photos">
-        <h2>
-          Photos{draft.photos.length ? ` (${draft.photos.length})` : ""}
-        </h2>
-        {!readonly ? (
-        <div className="photo-actions">
-            <label className={`btn ghost${photoBusy ? " is-busy" : ""}`} htmlFor="cam">
-              {photoBusy ? <Spinner ghost /> : null}
-            Take photo
+      {showSingleProblem ? (
+        <div className="card" key="problem" data-field="problem">
+          <label className="f" htmlFor="prob">
+            Problem / observation *
           </label>
-            <label className={`btn ghost${photoBusy ? " is-busy" : ""}`} htmlFor="gal">
-              {photoBusy ? <Spinner ghost /> : null}
-            From gallery
-          </label>
+          <textarea
+            className="in"
+            id="prob"
+            disabled={readonly}
+            placeholder="Short note, e.g. compressor not starting"
+            value={draft.problem}
+            onChange={(e) => onUpdate({ problem: e.target.value })}
+          />
+          <p className="hint">
+            Take a photo of the nameplate so the office can read brand, model and serial.
+          </p>
         </div>
-        ) : null}
-        {draft.photos.length ? (
-          <div className="thumbs">
-            {draft.photos.map((p, i) => (
-              <div className="thumb" key={photoKey(p) || i} data-photo-id={p.id || p.localId || ""}>
-                <img src={p.url} alt={`Photo ${i + 1}`} />
-                {!readonly ? (
-                <button
-                  type="button"
-                  className="x"
-                  aria-label={`Delete photo ${i + 1}`}
-                    data-photo-key={photoKey(p)}
-                    onClick={() => onDeletePhoto(photoKey(p))}
-                >
-                  ×
-                </button>
-                ) : null}
-                <select
-                  aria-label={`Photo ${i + 1} type`}
-                  value={p.type}
-                  disabled={readonly}
-                  onChange={(e) => onPhotoType(photoKey(p), e.target.value)}
-                >
-                  <option value="">No tag</option>
-                  {PHOTO_TYPES.map((pt) => (
-                    <option key={pt}>{pt}</option>
-                  ))}
-                </select>
-                {p.status === "uploading" ? (
-                  <div className="thumb-busy"><Spinner /> Uploading…</div>
-                ) : null}
-                {p.status === "saved" ? <p className="hint">Saved</p> : null}
-                {p.status === "failed" ? (
-                  <p className="hint">
-                    Failed.{" "}
-                    <button type="button" className="linkish" onClick={() => onRetryPhoto(photoKey(p))}>
-                      Retry
-                    </button>
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="hint">Add as many as you need. You can add more later.</p>
-        )}
-      </div>
+      ) : null}
+
+      {showNs && mixed ? (
+        <div className="card" key="problem-ns" data-field="problem-ns">
+          <label className="f" htmlFor="prob-ns">
+            Need service — Problem / observation *
+          </label>
+          <textarea
+            className="in"
+            id="prob-ns"
+            disabled={readonly}
+            placeholder="What is wrong with the Need service units?"
+            value={draft.problemNs || ""}
+            onChange={(e) => onUpdate({ problemNs: e.target.value })}
+          />
+        </div>
+      ) : null}
+
+      {showNs && mixed ? (
+        <PhotoBlock
+          title="Need service photos"
+          photos={nsPhotos}
+          readonly={readonly}
+          photoBusy={photoBusy}
+          required
+          fieldKey="photos-ns"
+          onArmBucket={() => onArmPhotoBucket("ns")}
+          onDeletePhoto={onDeletePhoto}
+          onPhotoType={onPhotoType}
+          onRetryPhoto={onRetryPhoto}
+        />
+      ) : null}
+
+      {showOos && mixed ? (
+        <div className="card" key="problem-oos" data-field="problem-oos">
+          <label className="f" htmlFor="prob-oos">
+            Out of service — Problem / observation *
+          </label>
+          <textarea
+            className="in"
+            id="prob-oos"
+            disabled={readonly}
+            placeholder="What is wrong with the OOS units?"
+            value={draft.problemOos || ""}
+            onChange={(e) => onUpdate({ problemOos: e.target.value })}
+          />
+        </div>
+      ) : null}
+
+      {showOos && mixed ? (
+        <PhotoBlock
+          title="Out of service photos"
+          photos={oosPhotos}
+          readonly={readonly}
+          photoBusy={photoBusy}
+          required
+          fieldKey="photos-oos"
+          onArmBucket={() => onArmPhotoBucket("oos")}
+          onDeletePhoto={onDeletePhoto}
+          onPhotoType={onPhotoType}
+          onRetryPhoto={onRetryPhoto}
+        />
+      ) : null}
+
+      {showSingleProblem || !needsProblem(draft) ? (
+        <PhotoBlock
+          title="Photos"
+          photos={showSingleProblem ? draft.photos : generalPhotos}
+          readonly={readonly}
+          photoBusy={photoBusy}
+          required={showSingleProblem}
+          fieldKey="photos"
+          onArmBucket={() => onArmPhotoBucket(draft.cond === "ns" || draft.cond === "oos" ? draft.cond : null)}
+          onDeletePhoto={onDeletePhoto}
+          onPhotoType={onPhotoType}
+          onRetryPhoto={onRetryPhoto}
+        />
+      ) : null}
 
       {draft.uid && !readonly ? (
         <button
@@ -557,26 +759,32 @@ function lineToItem(line, catalog) {
   const attrs = line.attrs && typeof line.attrs === "object" && !Array.isArray(line.attrs) ? line.attrs : {};
   const type = catalog.eq.find((e) => e.id === line.type_code);
   const customName = attrs["Custom Equipment Name"];
+  const notes = parseLineNotes(line.notes);
+  const specs = { ...attrs };
+  delete specs["Custom Equipment Name"];
   return {
     uid: line.id,
     eqId: line.type_code,
     name: customName || line.type_name,
-    custom: !!(customName || /^other /i.test(line.type_name || "")),
+    custom: !!(customName || /^other /i.test(line.type_name || "") || /^other /i.test(type?.name || "")),
     cat: line.category,
-    attrs: type?.attrs || [],
-    specs: attrs,
+    attrs: (type?.attrs || []).filter((k) => k !== "Custom Equipment Name"),
+    specs,
     qty: Number(line.qty) || 1,
     cond: line.condition || line.cond,
     good: Number(line.qty_good) || 0,
     ns: Number(line.qty_ns) || 0,
     oos: Number(line.qty_oos) || 0,
-    problem: line.notes || "",
+    problem: notes.problem,
+    problemNs: notes.problemNs,
+    problemOos: notes.problemOos,
     photos: (line.photos || []).map((p) => ({
       id: p.id,
       url: p.url,
       path: p.path,
-      type: p.kind || "",
+      type: p.kind === "Interior/Filter" ? "Interior or Filter" : p.kind || "",
       name: p.name,
+      bucket: p.condition_bucket || null,
       status: "saved",
     })),
   };
@@ -588,6 +796,7 @@ function visitFromApi(v, catalog, prev) {
   return {
     id: v.id,
     status: v.status,
+    locked: !!v.locked,
     client: customer.name || prev?.client || "",
     clientId: site.customer_id || customer.id || prev?.clientId,
     site: site.name || prev?.site || "",
@@ -595,14 +804,17 @@ function visitFromApi(v, catalog, prev) {
     tech: v.technician_name,
     technician_id: v.technician_id,
     date: toLocalInput(v.visited_at),
+    lastModifiedAt: v.last_modified_at || null,
+    lastModifiedBy: v.last_modified_by_name || null,
     items: (v.lines || []).map((l) => lineToItem(l, catalog)),
     totals: v.totals || null,
-    readonly: v.status === "Submitted",
+    readonly: !!v.locked,
   };
 }
 
 function linePayload(draft) {
   const attrs = { ...(draft.specs || {}) };
+  delete attrs["Custom Equipment Name"];
   if (draft.custom && draft.name.trim()) attrs["Custom Equipment Name"] = draft.name.trim();
   return {
     type_code: draft.eqId,
@@ -611,9 +823,67 @@ function linePayload(draft) {
     qty_good: draft.cond === "mixed" ? draft.good : 0,
     qty_ns: draft.cond === "mixed" ? draft.ns : 0,
     qty_oos: draft.cond === "mixed" ? draft.oos : 0,
-    notes: needsProblem(draft) ? draft.problem : "",
+    notes: encodeLineNotes(draft),
     attrs,
   };
+}
+
+function validateEquipment(draft, defs) {
+  if (draft.custom && !String(draft.name || "").trim()) {
+    return { err: "Enter the equipment name.", field: "name" };
+  }
+  if (!draft.qty || draft.qty < 1) {
+    return { err: "Quantity must be at least 1.", field: "qty" };
+  }
+  if (!draft.cond) {
+    return { err: "Choose the condition.", field: "condition" };
+  }
+  if (draft.cond === "mixed" && draft.good + draft.ns + draft.oos !== draft.qty) {
+    return {
+      err: `Good + Need service + Out of service must add up to ${draft.qty}.`,
+      field: "mixed",
+    };
+  }
+  const specKeys = (draft.attrs || []).filter((k) => k !== "Custom Equipment Name");
+  for (const k of specKeys) {
+    const d = defs[k];
+    if (!d) continue;
+    const v = String(draft.specs?.[k] ?? "").trim();
+    if (!v) {
+      return {
+        err: `Complete ${d.l || k}. Choose Unknown if you are not sure.`,
+        field: `spec-${k}`,
+      };
+    }
+    if (d.t === "s" && v === "Other" && !String(draft.specs?.[k + "__other"] ?? "").trim()) {
+      return {
+        err: `Enter the custom value for ${d.l || k}.`,
+        field: `spec-other-${k}`,
+      };
+    }
+  }
+  if (draft.cond === "mixed") {
+    if (draft.ns > 0 && !String(draft.problemNs || "").trim()) {
+      return { err: "Add a Problem / observation for Need service.", field: "problem-ns" };
+    }
+    if (draft.ns > 0 && photosForBucket(draft.photos, "ns").length < 1) {
+      return { err: "Add at least one photo for Need service.", field: "photos-ns" };
+    }
+    if (draft.oos > 0 && !String(draft.problemOos || "").trim()) {
+      return { err: "Add a Problem / observation for Out of service.", field: "problem-oos" };
+    }
+    if (draft.oos > 0 && photosForBucket(draft.photos, "oos").length < 1) {
+      return { err: "Add at least one photo for Out of service.", field: "photos-oos" };
+    }
+  } else if (draft.cond === "ns" || draft.cond === "oos") {
+    if (!String(draft.problem || "").trim()) {
+      return { err: "Add a Problem / observation.", field: "problem" };
+    }
+    if ((draft.photos || []).length < 1) {
+      return { err: "Add at least one photo for this condition.", field: "photos" };
+    }
+  }
+  return { err: "", field: "" };
 }
 
 export default function App() {
@@ -649,6 +919,7 @@ export default function App() {
   const formScrollRef = useRef(0);
   const catalogLoaded = useRef(false);
   const deletedPhotoIds = useRef(new Set());
+  const photoBucketRef = useRef(null);
 
   const CATS = catalog.cats;
   const DEFS = catalog.defs;
@@ -966,16 +1237,26 @@ export default function App() {
   }
 
   async function uploadPhoto(lineId, photo) {
-    const kind = PHOTO_TYPES.includes(photo.type) ? photo.type : "Other";
+    const kind = PHOTO_TYPES.includes(photo.type)
+      ? photo.type
+      : photo.type === "Interior/Filter"
+        ? "Interior or Filter"
+        : "Other";
     const saved = await api("POST", `/survey/visits/${visit.id}/lines/${lineId}/photos`, {
-      body: { kind, name: photo.name || "photo.jpg", dataUrl: photo.dataUrl || photo.url },
+      body: {
+        kind,
+        name: photo.name || "photo.jpg",
+        dataUrl: photo.dataUrl || photo.url,
+        condition_bucket: photo.bucket || null,
+      },
     });
     return {
       id: saved.id,
       url: saved.url,
       path: saved.path,
-      type: saved.kind || kind,
+      type: saved.kind === "Interior/Filter" ? "Interior or Filter" : saved.kind || kind,
       name: saved.name,
+      bucket: saved.condition_bucket || photo.bucket || null,
       status: "saved",
     };
   }
@@ -983,6 +1264,7 @@ export default function App() {
   async function addPhotos(files) {
     formScrollRef.current = window.scrollY;
     const lineId = draft?.uid;
+    const bucket = photoBucketRef.current;
     for (const f of [...files]) {
       let dataUrl;
       try {
@@ -997,7 +1279,8 @@ export default function App() {
         localId,
         url: dataUrl,
         dataUrl,
-      type: "",
+        type: "",
+        bucket: bucket || null,
         name: (f.name || "photo").replace(/\.[^.]+$/, ".jpg"),
         status: lineId ? "uploading" : "pending",
       };
@@ -1030,13 +1313,10 @@ export default function App() {
   }
 
   async function saveEquipment() {
-    let err = "";
-    if (draft.custom && !draft.name.trim()) err = "Type the equipment name.";
-    else if (!draft.cond) err = "Choose the condition.";
-    else if (draft.cond === "mixed" && draft.good + draft.ns + draft.oos !== draft.qty)
-      err = `Good + Need service + Out of service must add up to ${draft.qty}.`;
+    const { err, field } = validateEquipment(draft, DEFS);
     if (err) {
       setFormErr(err);
+      if (field) scrollToField(field);
       return;
     }
     if (visit.readonly) {
@@ -1044,13 +1324,27 @@ export default function App() {
       return;
     }
     setFormErr("");
-    const savedDraft = { ...draft, name: draft.name.trim() };
+    const savedDraft = {
+      ...draft,
+      name: draft.name.trim(),
+      problem: String(draft.problem || "").trim(),
+      problemNs: String(draft.problemNs || "").trim(),
+      problemOos: String(draft.problemOos || "").trim(),
+    };
     if (savedDraft.cond !== "mixed") {
       savedDraft.good = 0;
       savedDraft.ns = 0;
       savedDraft.oos = 0;
+      savedDraft.problemNs = "";
+      savedDraft.problemOos = "";
+    } else {
+      savedDraft.problem = "";
     }
-    if (!needsProblem(savedDraft)) savedDraft.problem = "";
+    if (!needsProblem(savedDraft)) {
+      savedDraft.problem = "";
+      savedDraft.problemNs = "";
+      savedDraft.problemOos = "";
+    }
     setBusy(true);
     try {
       let lineId = savedDraft.uid;
@@ -1169,6 +1463,11 @@ export default function App() {
     }
     setBusy(true);
     try {
+      if (visit.status === "Submitted") {
+        await refreshVisit(visit.id, visit);
+        show("done");
+        return;
+      }
       const submitted = await api("POST", `/survey/visits/${visit.id}/submit`);
       setVisit(visitFromApi(submitted, catalog, visit));
       show("done");
@@ -1218,11 +1517,16 @@ export default function App() {
       };
     }
     if (pickCat === null) {
+      const catOrder = CATS.map((c, i) => ({ c, i })).sort((a, b) => {
+        if (a.c === "Other") return 1;
+        if (b.c === "Other") return -1;
+        return a.i - b.i;
+      });
       return {
         sub: "Choose a category or search",
         body: (
           <div className="cats">
-            {CATS.map((c, i) => (
+            {catOrder.map(({ c, i }) => (
               <button key={c} className="cat" type="button" onClick={() => setPickCat(i)}>
                 {c}
                 <small>{EQ.filter((e) => e.cats.includes(i)).length} types</small>
@@ -1232,7 +1536,7 @@ export default function App() {
         ),
       };
     }
-    const list = EQ.filter((e) => e.cats.includes(pickCat));
+    const list = equipmentInCategory(EQ, CATS, pickCat);
     return {
       sub: CATS[pickCat],
       body: (
@@ -1273,13 +1577,19 @@ export default function App() {
 
   function pickEq(eq) {
     const other = eq || otherTypeForCategory(EQ, CATS, pickCat);
+    const catName = eq
+      ? CATS[eq.cats[0]]
+      : pickCat !== null
+        ? CATS[pickCat]
+        : "Other";
+    const attrs = (other?.attrs || []).filter((k) => k !== "Custom Equipment Name");
     openForm({
       uid: null,
       eqId: other ? other.id : "CK-050",
       name: eq ? eq.name : "",
       custom: !eq,
-      cat: eq ? CATS[eq.cats[0]] : pickCat !== null ? CATS[pickCat] : "Other",
-      attrs: other ? other.attrs : [],
+      cat: catName,
+      attrs,
       specs: {},
       qty: 1,
       cond: null,
@@ -1287,6 +1597,8 @@ export default function App() {
       ns: 0,
       oos: 0,
       problem: "",
+      problemNs: "",
+      problemOos: "",
       photos: [],
     });
   }
@@ -1655,6 +1967,10 @@ export default function App() {
             {visit ? (
               <small>
                 {visit.client}, {fmtDate(visit.date)}, {visit.tech}
+                {visit.status === "Submitted" ? " · Submitted" : ""}
+                {visit.lastModifiedAt
+                  ? ` · Last modified ${fmtDateTime(visit.lastModifiedAt)}${visit.lastModifiedBy ? ` by ${visit.lastModifiedBy}` : ""}`
+                  : ""}
               </small>
             ) : null}
           </h1>
@@ -1682,15 +1998,15 @@ export default function App() {
                     <span className="q">× {it.qty}</span>
                   </div>
                   {sp ? <p>{sp}</p> : null}
-                  {it.problem ? <p>{it.problem}</p> : null}
+                  {formatLineNotes(encodeLineNotes(it)) ? (
+                    <p>{formatLineNotes(encodeLineNotes(it))}</p>
+                  ) : null}
                   <div className="tags">
                     {g ? <span className="tag g">Good {g}</span> : null}
                     {s ? <span className="tag s">Need service {s}</span> : null}
                     {o ? <span className="tag o">OOS {o}</span> : null}
                     {it.photos.length ? (
-                      <span className="tag p">
-                        {it.photos.length} photo{it.photos.length > 1 ? "s" : ""}
-                      </span>
+                      <span className="tag p">{photoCountLabel(it.photos.length)}</span>
                     ) : null}
                   </div>
                 </button>
@@ -1769,6 +2085,9 @@ export default function App() {
               onPhotoType={setPhotoType}
               onRetryPhoto={retryPhoto}
               onDelete={deleteEquipment}
+              onArmPhotoBucket={(bucket) => {
+                photoBucketRef.current = bucket || null;
+              }}
             />
           ) : null}
         </div>
@@ -1829,12 +2148,10 @@ export default function App() {
                           <div className="tags" style={{ marginTop: 6 }}>
                             {s ? <span className="tag s">Need service {s}</span> : null}
                             {o ? <span className="tag o">OOS {o}</span> : null}
-                            <span className="tag p">
-                              {it.photos.length} photo{it.photos.length === 1 ? "" : "s"}
-                            </span>
+                            <span className="tag p">{photoCountLabel(it.photos.length)}</span>
                           </div>
-                          {it.problem ? (
-                            <p className="hint">{it.problem}</p>
+                          {formatLineNotes(encodeLineNotes(it)) ? (
+                            <p className="hint">{formatLineNotes(encodeLineNotes(it))}</p>
                           ) : (
                             <p className="hint">No observation written.</p>
                           )}
@@ -1858,7 +2175,13 @@ export default function App() {
           {!readonly ? (
             <button className="btn big" type="button" disabled={busy} onClick={finishSave} aria-busy={busy || undefined}>
               {busy ? <Spinner /> : null}
-              {busy ? "Saving visit…" : "Save visit"}
+              {busy
+                ? visit?.status === "Submitted"
+                  ? "Updating…"
+                  : "Saving visit…"
+                : visit?.status === "Submitted"
+                  ? "Done"
+                  : "Save visit"}
           </button>
           ) : null}
         </div>
@@ -1884,7 +2207,8 @@ export default function App() {
               </div>
               <p className="hint">
                 {visit.items.length} equipment record{visit.items.length === 1 ? "" : "s"} and{" "}
-                {visit.items.reduce((n, i) => n + i.photos.length, 0)} photos saved by {visit.tech}.
+                {photoCountLabel(visit.items.reduce((n, i) => n + i.photos.length, 0))} saved by{" "}
+                {visit.tech}.
               </p>
             </div>
           ) : null}

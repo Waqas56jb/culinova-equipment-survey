@@ -669,29 +669,55 @@ export default function App() {
                   </div>
                   {line.notes ? (
                     <p className="eq-note">
-                      <b>Observation:</b> {line.notes}
+                      <b>Observation:</b>{" "}
+                      {(() => {
+                        try {
+                          const j = JSON.parse(line.notes);
+                          if (j && typeof j === "object" && ("ns" in j || "oos" in j)) {
+                            return [
+                              j.ns ? `Need service: ${j.ns}` : null,
+                              j.oos ? `OOS: ${j.oos}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ");
+                          }
+                        } catch {
+                          /* plain */
+                        }
+                        return line.notes;
+                      })()}
                     </p>
                   ) : null}
                   {photos.length ? (
                             <div className="photos">
-                      {photos.map((p) => (
+                      {photos.map((p) => {
+                        const kindLabel = p.kind === "Interior/Filter" ? "Interior or Filter" : p.kind || "Photo";
+                        const bucketLabel =
+                          p.condition_bucket === "ns"
+                            ? "Need service"
+                            : p.condition_bucket === "oos"
+                              ? "OOS"
+                              : "";
+                        const label = bucketLabel ? `${kindLabel} · ${bucketLabel}` : kindLabel;
+                        return (
                                 <button
                           key={p.id}
                                   className="ph"
                                   type="button"
                           onClick={() =>
                             setLightbox({
-                              title: `${lineName(line)}, ${p.kind || "Photo"}`,
-                              type: p.kind || "Other",
+                              title: `${lineName(line)}, ${label}`,
+                              type: kindLabel,
                               url: p.url,
                               id: p.id,
                             })
                           }
                         >
-                          <img src={p.url} alt={p.kind || "Photo"} />
-                          <span>{p.kind || "Photo"}</span>
+                          <img src={p.url} alt={label} />
+                          <span>{label}</span>
                                 </button>
-                              ))}
+                        );
+                      })}
                             </div>
                     ) : null}
                 </article>

@@ -1,9 +1,9 @@
 export const PHOTO_TYPES = [
   'Equipment',
-  'Nameplate',
   'Problem',
-  'Interior/Filter',
+  'Nameplate',
   'Control Panel',
+  'Interior or Filter',
   'Other',
 ]
 
